@@ -199,7 +199,7 @@ class GraphBuilder:
         Returns:
             GraphNode representing the resource.
         """
-        node_id = f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_')
+        node_id = f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_')
         label = self._build_node_label(resource.name, [resource.name], resource.category)
         
         # Include power state for VMs if available
@@ -214,6 +214,18 @@ class GraphBuilder:
         # Add power state for VMs
         if resource.resource_type == 'Microsoft.Compute/virtualMachines' and 'power_state' in resource.properties:
             attributes['power_state'] = resource.properties['power_state']
+        
+        # Pass through safe properties for use in DOT generation
+        if resource.properties:
+            # Only pass simple properties that won't cause DOT syntax issues
+            safe_props = {}
+            for key, value in resource.properties.items():
+                if isinstance(value, (str, int, float, bool)):
+                    safe_props[key] = value
+                elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
+                    # Handle list of dictionaries (like external_pls_connections)
+                    safe_props[key] = value
+            attributes['properties'] = safe_props
         
         return GraphNode(
             id=node_id,
@@ -264,8 +276,8 @@ class GraphBuilder:
                 target_resource = resource_by_id[target_name]
                 
                 edge = GraphEdge(
-                    source=f"{source_resource.category.lower()}_{source_name.lower()}".replace(' ', '_').replace('-', '_'),
-                    target=f"{target_resource.category.lower()}_{target_name.lower()}".replace(' ', '_').replace('-', '_'),
+                    source=f"{source_resource.category.lower()}_{source_name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                    target=f"{target_resource.category.lower()}_{target_name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
                     label=association.get('association_type', ''),
                     edge_type='association',
                     attributes={
@@ -283,19 +295,263 @@ class GraphBuilder:
         """
         resource_by_name = {r.name: r for r in resources}
         
+        # First, create DNS zone connections to infrastructure they serve
+        self._create_dns_zone_connections(resources, resource_by_name)
+        
         for resource in resources:
             for dep_name in resource.dependencies:
                 if dep_name in resource_by_name:
                     dep_resource = resource_by_name[dep_name]
                     
-                    edge = GraphEdge(
-                        source=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_'),
-                        target=f"{dep_resource.category.lower()}_{dep_name.lower()}".replace(' ', '_').replace('-', '_'),
-                        label='depends on',
-                        edge_type='dependency',
-                        attributes={
+                    # For VM-disk dependencies, create a stronger visual connection
+                    if (resource.resource_type == 'Microsoft.Compute/virtualMachines' and 
+                        dep_resource.resource_type == 'Microsoft.Compute/disks'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkgreen',
+                            'penwidth': '2',
+                            'weight': '10',  # Higher weight for stronger positioning
+                            'minlen': '1'    # Minimum length for closer positioning
+                        }
+                        label = 'attached'
+                    # For private endpoint-NIC dependencies, create a connection to show attachment
+                    elif (resource.resource_type == 'Microsoft.Network/privateEndpoints' and 
+                          dep_resource.resource_type == 'Microsoft.Network/networkInterfaces'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'purple',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for stronger positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses'
+                    # For private link service-NIC dependencies, create a connection to show attachment
+                    elif (resource.resource_type == 'Microsoft.Network/privateLinkServices' and 
+                          dep_resource.resource_type == 'Microsoft.Network/networkInterfaces'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'orange',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for stronger positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses'
+                    # For private link service-load balancer dependencies, create a connection to show backend relationship
+                    elif (resource.resource_type == 'Microsoft.Network/privateLinkServices' and 
+                          dep_resource.resource_type == 'Microsoft.Network/loadBalancers'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'blue',
+                            'penwidth': '2',
+                            'weight': '9',  # High weight for stronger positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'fronts'
+                    # For private endpoint-subnet dependencies, create a connection to show placement
+                    elif (resource.resource_type == 'Microsoft.Network/privateEndpoints' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'cyan',
+                            'penwidth': '2',
+                            'weight': '5',  # Medium weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'deployed in'
+                    # For NIC-subnet dependencies, create a connection to show placement
+                    elif (resource.resource_type == 'Microsoft.Network/networkInterfaces' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
+                        # Use different edge routing to prevent overlapping connections
+                        edge_attrs = {
+                            'style': 'dashed',
+                            'color': 'lime',
+                            'penwidth': '2',
+                            'weight': '3',  # Lower weight for positioning
+                            'minlen': '1',   # Minimum length for closer positioning
+                            'constraint': 'true'  # Keep hierarchical constraints
+                        }
+                        label = 'in'
+                    # For Internet-public IP dependencies, create a connection to show external access
+                    elif (resource.resource_type == 'Internet/Gateway' and 
+                          dep_resource.resource_type == 'Microsoft.Network/publicIPAddresses'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'yellow',
+                            'penwidth': '3',
+                            'weight': '10',  # High weight for positioning at top
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'provides'
+                    # For NSG-subnet dependencies, create a connection to show security application
+                    elif (resource.resource_type == 'Microsoft.Network/networkSecurityGroups' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'red',
+                            'penwidth': '2',
+                            'weight': '7',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'secures'
+                    # For VM-storage account dependencies, create a connection to show storage usage
+                    elif (resource.resource_type == 'Microsoft.Compute/virtualMachines' and 
+                          dep_resource.resource_type == 'Microsoft.Storage/storageAccounts'):
+                        edge_attrs = {
+                            'style': 'dashed',
+                            'color': 'brown',
+                            'penwidth': '2',
+                            'weight': '4',  # Medium weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'stores data'
+                    # For VNet-subnet dependencies, create a connection to show containment
+                    elif (resource.resource_type == 'Microsoft.Network/virtualNetworks' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkblue',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'contains'
+                    # For VNet-private endpoint dependencies, create a connection to show containment
+                    elif (resource.resource_type == 'Microsoft.Network/virtualNetworks' and 
+                          dep_resource.resource_type == 'Microsoft.Network/privateEndpoints'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkblue',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'contains'
+                    # For OpenShift cluster-subnet dependencies, create a connection to show deployment
+                    elif (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkred',
+                            'penwidth': '3',
+                            'weight': '9',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'deployed in'
+                    # For OpenShift cluster-VNet dependencies, create a connection to show network usage
+                    elif (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkred',
+                            'penwidth': '3',
+                            'weight': '9',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses network'
+                    # For OpenShift cluster-storage dependencies, create a connection to show storage usage
+                    elif (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and 
+                          dep_resource.resource_type == 'Microsoft.Storage/storageAccounts'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkred',
+                            'penwidth': '2',
+                            'weight': '6',  # Medium-high weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses storage'
+                    else:
+                        edge_attrs = {
                             'style': 'dashed',
                             'color': 'red'
+                        }
+                        label = 'depends on'
+                    
+                    edge = GraphEdge(
+                        source=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        target=f"{dep_resource.category.lower()}_{dep_name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        label=label,
+                        edge_type='dependency',
+                        attributes=edge_attrs
+                    )
+                    self.edges.append(edge)
+    
+    def _create_dns_zone_connections(self, resources: List[AzureResource], resource_by_name: Dict[str, AzureResource]):
+        """Create connections from DNS zones to infrastructure they serve.
+        
+        Args:
+            resources: List of Azure resources.
+            resource_by_name: Dictionary mapping resource names to resources.
+        """
+        # Find DNS zones
+        dns_zones = [r for r in resources if r.resource_type == 'Microsoft.Network/dnszones']
+        
+        for dns_zone in dns_zones:
+            # Extract the base name from DNS zone (e.g., "hj9nb" from "hj9nb.azure.redhatworkshops.io")
+            zone_name_parts = dns_zone.name.split('.')
+            if zone_name_parts:
+                base_name = zone_name_parts[0]
+                
+                # Find resources that match this naming pattern or have DNS configuration
+                matching_resources = []
+                for resource in resources:
+                    name_matches = False
+                    
+                    # For OpenShift clusters, check actual DNS configuration and DNS records
+                    if (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and 
+                        'openshift_dns_domains' in resource.properties):
+                        
+                        dns_domains = resource.properties['openshift_dns_domains']
+                        for domain in dns_domains:
+                            # Check if DNS zone domain is a parent domain for any cluster domain
+                            # e.g., "redhatworkshops.io" would be parent of "hypershift-mgmt-hyp01.eastus.aroapp.io"
+                            dns_zone_domain = '.'.join(dns_zone.name.split('.')[1:])  # Skip subdomain part
+                            if dns_zone_domain and dns_zone_domain in domain:
+                                name_matches = True
+                                logger.info(f"DNS zone '{dns_zone.name}' serves OpenShift cluster '{resource.name}' domain '{domain}'")
+                                break
+                        
+                        # Also check if the DNS zone might have custom records pointing to OpenShift cluster IPs
+                        if not name_matches and 'openshift_cluster_ips' in resource.properties:
+                            cluster_ips = resource.properties['openshift_cluster_ips']
+                            # Note: We would need to fetch DNS records from the zone to check this
+                            # This is a placeholder for future enhancement to check A/CNAME records
+                            logger.debug(f"Cluster IPs for potential DNS record matching: {cluster_ips}")
+                    else:
+                        # For other resources, use naming pattern matching
+                        name_matches = (
+                            base_name.lower() in resource.name.lower() or
+                            # Look for common patterns between DNS zone and resource names
+                            any(part in dns_zone.name.lower() and part in resource.name.lower() 
+                                for part in ["hypershift", "mgmt"] if len(part) > 3) or
+                            # Extract any meaningful parts from DNS zone name and check if they appear in resource name
+                            any(part in resource.name.lower() for part in dns_zone.name.lower().replace('.', ' ').split() 
+                                if len(part) >= 4 and part.isalnum())
+                        )
+                    
+                    if (resource != dns_zone and 
+                        name_matches and
+                        resource.resource_type in [
+                            'Microsoft.Network/virtualNetworks',
+                            'Microsoft.Compute/virtualMachines', 
+                            'Microsoft.Network/loadBalancers',
+                            'Microsoft.RedHatOpenShift/OpenShiftClusters',
+                            'Microsoft.ContainerService/managedClusters'
+                        ]):
+                        matching_resources.append(resource)
+                
+                # Create edges from DNS zone to matching infrastructure
+                for resource in matching_resources:
+                    edge = GraphEdge(
+                        source=f"{dns_zone.category.lower()}_{dns_zone.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        target=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        label='provides DNS for',
+                        edge_type='dns_service',
+                        attributes={
+                            'style': 'dashed',
+                            'color': 'darkgreen',
+                            'penwidth': '2',
+                            'weight': '2',  # Lower weight to avoid interfering with main topology
+                            'minlen': '2'   # Allow some distance
                         }
                     )
                     self.edges.append(edge)
@@ -304,13 +560,28 @@ class GraphBuilder:
         """Add nodes and edges to NetworkX graph."""
         # Add nodes
         for node in self.nodes:
+            # Filter out complex objects that NetworkX can't handle
+            safe_attributes = {}
+            for key, value in node.attributes.items():
+                if key != 'properties' and not isinstance(value, (dict, list)):
+                    safe_attributes[key] = value
+            
             self.graph.add_node(node.id, **{
                 'label': node.label,
                 'name': node.name,
                 'category': node.category,
                 'resource_type': node.resource_type,
-                **node.attributes
+                **safe_attributes
             })
+            
+            # Store complex properties separately for DOT generation access
+            if 'properties' in node.attributes and isinstance(node.attributes['properties'], dict):
+                for prop_key, prop_value in node.attributes['properties'].items():
+                    if isinstance(prop_value, (str, int, float, bool)):
+                        self.graph.nodes[node.id][f'prop_{prop_key}'] = prop_value
+                    elif isinstance(prop_value, list):
+                        # Store list properties as string representations for safety
+                        self.graph.nodes[node.id][f'prop_{prop_key}'] = str(prop_value)
         
         # Add edges
         for edge in self.edges:
@@ -336,7 +607,7 @@ class GraphBuilder:
         for rg_name, rg_resources in rg_groups.items():
             subgraph_nodes = []
             for resource in rg_resources:
-                node_id = f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_')
+                node_id = f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_')
                 if node_id in self.graph:
                     subgraph_nodes.append(node_id)
             
