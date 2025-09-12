@@ -52,6 +52,7 @@ class AzViz:
         splines: Splines = Splines.POLYLINE,
         exclude_types: Optional[Set[str]] = None,
         show_legends: bool = True,
+        show_power_state: bool = True,
         save_dot: bool = False
     ) -> Path:
         """Export Azure resource topology diagram.
@@ -68,6 +69,7 @@ class AzViz:
             splines: Edge appearance.
             exclude_types: Resource types to exclude (supports wildcards).
             show_legends: Whether to include legend.
+            show_power_state: Whether to show VM power state visualization.
             save_dot: Whether to save DOT source file.
             
         Returns:
@@ -98,6 +100,7 @@ class AzViz:
             splines=splines,
             exclude_types=exclude_types or set(),
             show_legends=show_legends,
+            show_power_state=show_power_state,
             output_file=output_file
         )
         
@@ -111,7 +114,7 @@ class AzViz:
             logger.info(f"Discovering resources in resource group: {rg_name}")
             
             # Get resources
-            resources = self.azure_client.get_resources_in_group(rg_name)
+            resources = self.azure_client.get_resources_in_group(rg_name, config.show_power_state)
             all_resources.extend(resources)
             
             # Get network topology
@@ -140,7 +143,12 @@ class AzViz:
         
         # Generate DOT language
         dot_generator = DOTGenerator(config)
-        dot_content = dot_generator.generate_dot(graph, graph_builder.subgraphs)
+        dot_content = dot_generator.generate_dot(
+            graph, 
+            graph_builder.subgraphs,
+            subscription_name=self.azure_client.subscription_name,
+            subscription_id=self.azure_client.subscription_id
+        )
         
         # Save DOT file if requested
         if save_dot:
@@ -149,9 +157,35 @@ class AzViz:
             renderer.save_dot_file(dot_content, str(dot_file))
             logger.info(f"DOT file saved: {dot_file}")
         
+        # Validate output file extension matches format
+        output_path_obj = Path(output_file)
+        format_extensions = {
+            OutputFormat.PNG: '.png',
+            OutputFormat.SVG: '.svg', 
+            OutputFormat.HTML: '.html'
+        }
+        
+        expected_extension = format_extensions[output_format]
+        actual_extension = output_path_obj.suffix.lower()
+        
+        # If no extension provided, add the correct one
+        if not actual_extension:
+            final_output_file = str(output_path_obj.with_suffix(expected_extension))
+            logger.info(f"Added extension for format: {output_file} -> {final_output_file}")
+        elif actual_extension != expected_extension:
+            # Extension mismatch - fail with clear error
+            raise ValueError(
+                f"Output file extension '{actual_extension}' does not match format '{output_format.value}'. "
+                f"Expected extension: '{expected_extension}'. "
+                f"Please use '{output_path_obj.stem}{expected_extension}' or change the format."
+            )
+        else:
+            # Extension is correct
+            final_output_file = output_file
+        
         # Render diagram
         renderer = GraphRenderer()
-        output_path = renderer.render(dot_content, output_file, output_format)
+        output_path = renderer.render(dot_content, final_output_file, output_format)
         
         logger.info(f"Diagram exported successfully: {output_path}")
         return output_path
@@ -173,7 +207,7 @@ class AzViz:
         Returns:
             List of Azure resources.
         """
-        return self.azure_client.get_resources_in_group(resource_group)
+        return self.azure_client.get_resources_in_group(resource_group, True)
     
     def validate_prerequisites(self) -> Dict[str, bool]:
         """Validate all prerequisites for diagram generation.

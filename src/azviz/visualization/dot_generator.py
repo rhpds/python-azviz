@@ -28,7 +28,7 @@ class DOTGenerator:
             background_color='black',
             node_color='darkgray',
             edge_color='white',
-            font_color='white',
+            font_color='black',
             font_name='Arial'
         ),
         Theme.NEON: ThemeConfig(
@@ -49,12 +49,20 @@ class DOTGenerator:
         self.config = config
         self.theme = self.THEMES[config.theme]
         
-    def generate_dot(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
+    def generate_dot(
+        self, 
+        graph: nx.DiGraph, 
+        subgraphs: Dict[str, Dict[str, Any]], 
+        subscription_name: Optional[str] = None,
+        subscription_id: Optional[str] = None
+    ) -> str:
         """Generate DOT language string from NetworkX graph.
         
         Args:
             graph: NetworkX directed graph.
             subgraphs: Dictionary of subgraph definitions.
+            subscription_name: Azure subscription display name.
+            subscription_id: Azure subscription ID.
             
         Returns:
             DOT language string.
@@ -66,6 +74,9 @@ class DOTGenerator:
         graph_attrs = self._generate_graph_attributes()
         node_defaults = self._generate_node_defaults()
         edge_defaults = self._generate_edge_defaults()
+        
+        # Generate subscription title
+        subscription_title = self._generate_subscription_title(subscription_name, subscription_id)
         
         # Generate subgraphs
         subgraph_content = self._generate_subgraphs(graph, subgraphs)
@@ -86,6 +97,7 @@ class DOTGenerator:
 {node_defaults}
 {edge_defaults}
 
+{subscription_title}
 {subgraph_content}
 {standalone_nodes}
 {edges}
@@ -121,9 +133,13 @@ class DOTGenerator:
     fontname="{self.theme.font_name}";
     fontsize="{self.theme.font_size}";
     fontcolor="{self.theme.font_color}";
-    concentrate=true;
+    concentrate=false;
     compound=true;
-    newrank=true;'''
+    newrank=true;
+    esep="+25";
+    sep="+20";
+    nodesep="1.0";
+    ranksep="1.5";'''
     
     def _generate_node_defaults(self) -> str:
         """Generate default node attributes."""
@@ -147,6 +163,52 @@ class DOTGenerator:
         fontcolor="{self.theme.font_color}",
         color="{self.theme.edge_color}"
     ];'''
+    
+    def _generate_subscription_title(self, subscription_name: Optional[str], subscription_id: Optional[str]) -> str:
+        """Generate subscription title at the top of the diagram.
+        
+        Args:
+            subscription_name: Azure subscription display name.
+            subscription_id: Azure subscription ID.
+            
+        Returns:
+            DOT subscription title definition.
+        """
+        if not subscription_name and not subscription_id:
+            return ""
+        
+        # Create title text
+        if subscription_name and subscription_id:
+            title_text = f"{subscription_name}\\n({subscription_id})"
+        elif subscription_name:
+            title_text = subscription_name
+        else:
+            title_text = subscription_id
+        
+        # Escape special characters for DOT
+        title_text = title_text.replace('"', '\\"')
+        
+        # Use appropriate colors based on theme
+        title_fillcolor = "lightblue" if self.config.theme == Theme.LIGHT else "darkblue"
+        title_fontcolor = self.theme.font_color
+        
+        return f'''    // Subscription Title
+    "subscription_title" [
+        label="{title_text}",
+        shape="box",
+        style="filled",
+        fillcolor="{title_fillcolor}",
+        fontname="{self.theme.font_name}",
+        fontsize="16",
+        fontcolor="{title_fontcolor}",
+        color="{self.theme.edge_color}",
+        penwidth="2",
+        rank="min"
+    ];
+    
+    // Force title to appear at the top
+    {{rank="min"; "subscription_title";}}
+'''
     
     def _generate_subgraphs(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
         """Generate subgraph definitions with hybrid layout.
@@ -250,33 +312,116 @@ class DOTGenerator:
             # Format resource type display and power state
             type_display_parts = []
             if self.config.label_verbosity.value >= 2 and resource_type:
-                provider_parts = resource_type.split('/')
-                if len(provider_parts) >= 2:
-                    provider = provider_parts[0].replace('Microsoft.', '')
-                    type_name = provider_parts[1]
-                    type_display_parts.extend([
-                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Provider:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{provider}</FONT></TD></TR>',
-                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Type:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{type_name}</FONT></TD></TR>'
-                    ])
-                else:
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Type:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{resource_type}</FONT></TD></TR>')
+                # Check if this resource should hide provider info
+                hide_provider = False
+                if 'prop_hide_provider' in node_data and node_data['prop_hide_provider']:
+                    hide_provider = True
+                
+                if not hide_provider:
+                    provider_parts = resource_type.split('/')
+                    if len(provider_parts) >= 2:
+                        provider = provider_parts[0].replace('Microsoft.', '')
+                        type_name = provider_parts[1]
+                        type_display_parts.extend([
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Provider:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{provider}</FONT></TD></TR>',
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Type:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{type_name}</FONT></TD></TR>'
+                        ])
+                    else:
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Type:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{resource_type}</FONT></TD></TR>')
+                # If hiding provider, show nothing additional
             
-            # Add power state for VMs
-            if is_vm and power_state:
+            # Add power state for VMs (if enabled and available)
+            if is_vm and power_state and self.config.show_power_state:
                 # Color code the power state
                 state_color = "green" if power_state == "running" else "red" if power_state in ["stopped", "deallocated"] else "orange"
                 type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9" COLOR="{state_color}"><B>{power_state.upper()}</B></FONT></TD></TR>')
+            
+            # Add subnet information for private endpoints
+            if resource_type == 'Microsoft.Network/privateEndpoints':
+                # Get subnet information from stored properties
+                if 'prop_subnet_name' in node_data:
+                    subnet_name = str(node_data['prop_subnet_name']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnet:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_name}</FONT></TD></TR>')
+                
+                # Show external PLS connections if available
+                if 'prop_external_pls_connections' in node_data:
+                    # Parse the string representation back to list
+                    import ast
+                    try:
+                        ext_connections = ast.literal_eval(node_data['prop_external_pls_connections'])
+                        if isinstance(ext_connections, list):
+                            for ext_conn in ext_connections:
+                                if isinstance(ext_conn, dict):
+                                    ext_name = str(ext_conn.get('name', 'unknown')).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                                    ext_rg = str(ext_conn.get('resource_group', 'unknown')).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">→ PLS:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{ext_name} ({ext_rg})</FONT></TD></TR>')
+                    except (ValueError, SyntaxError):
+                        # If parsing fails, skip external connections display
+                        pass
+            
+            # Add special information for placeholder resources
+            if 'prop_is_placeholder' in node_data and str(node_data['prop_is_placeholder']).lower() == 'true':
+                is_cross_tenant = str(node_data.get('prop_is_cross_tenant', '')).lower() == 'true'
+                
+                # Add access note
+                if 'prop_access_note' in node_data:
+                    access_note = str(node_data['prop_access_note']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    note_color = "red" if is_cross_tenant else "orange"
+                    type_display_parts.append(f'<TR><TD align="center" colspan="2"><FONT POINT-SIZE="8" COLOR="{note_color}"><I>{access_note}</I></FONT></TD></TR>')
+                
+                # Add tenant-specific note for cross-tenant resources
+                if is_cross_tenant and 'prop_tenant_note' in node_data:
+                    tenant_note = str(node_data['prop_tenant_note']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    # Truncate long notes for display
+                    if len(tenant_note) > 60:
+                        tenant_note = tenant_note[:57] + "..."
+                    type_display_parts.append(f'<TR><TD align="center" colspan="2"><FONT POINT-SIZE="7" COLOR="red"><I>{tenant_note}</I></FONT></TD></TR>')
+            
+            # Add address prefix information for subnets
+            if resource_type == 'Microsoft.Network/virtualNetworks/subnets':
+                # Get address prefix from stored properties
+                if 'prop_address_prefix' in node_data:
+                    address_prefix = str(node_data['prop_address_prefix']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    if address_prefix != 'unknown':
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">CIDR:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_prefix}</FONT></TD></TR>')
             
             type_display = ''.join(type_display_parts)
             
             # Create HTML table label similar to PowerShell version
             html_label = f'<<TABLE border="0" cellborder="0" cellpadding="0"><TR><TD ALIGN="center" colspan="2"><img src="{icon_path}"/></TD></TR><TR><TD align="center" colspan="2"><B><FONT POINT-SIZE="11">{escaped_name}</FONT></B></TD></TR>{type_display}</TABLE>>'
             
+            # Use appropriate background color based on theme and cross-tenant status
+            is_cross_tenant = str(node_data.get('prop_is_cross_tenant', '')).lower() == 'true'
+            is_placeholder = str(node_data.get('prop_is_placeholder', '')).lower() == 'true'
+            
+            if is_cross_tenant and is_placeholder:
+                # Special styling for cross-tenant placeholders
+                node_fillcolor = "#ffe6e6" if self.config.theme == Theme.LIGHT else "#4d1a1a"  # Light red/dark red
+                penwidth = "2"
+                style = "dashed"
+                border_color = "red"
+            elif is_placeholder:
+                # General external placeholder styling
+                node_fillcolor = "#fff2e6" if self.config.theme == Theme.LIGHT else "#4d2d1a"  # Light orange/dark orange
+                penwidth = "2"
+                style = "dotted"
+                border_color = "orange"
+            else:
+                # Normal styling
+                node_fillcolor = "white" if self.config.theme == Theme.LIGHT else "darkgray"
+                penwidth = "1"
+                style = "filled"
+                border_color = self.theme.edge_color
+            
+            # For HTML table labels, we need to use a different approach to show borders
+            # Use shape="box" with HTML label for better border control
             attributes = [
                 f'label={html_label}',
-                'fillcolor="white"',
-                'shape="none"',
-                'penwidth="1"',
+                f'fillcolor="{node_fillcolor}"',
+                'shape="box"',
+                f'penwidth="{penwidth}"',
+                f'style="{style}"',
+                f'color="{border_color}"',  # Border color
                 f'fontname="{self.theme.font_name}"'
             ]
         else:
@@ -384,12 +529,14 @@ class DOTGenerator:
         if not has_associations and not has_dependencies:
             return ""
         
+        # Use appropriate legend background based on theme
+        legend_fillcolor = "white" if self.config.theme == Theme.LIGHT else "gray"
         legend_content = [
             '    // Legend',
             '    subgraph "cluster_legend" {',
             '        label="Legend";',
             '        style="filled";',
-            '        fillcolor="white";',
+            f'        fillcolor="{legend_fillcolor}";',
             f'        fontcolor="{self.theme.font_color}";',
             ''
         ]

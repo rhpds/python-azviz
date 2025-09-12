@@ -1,7 +1,7 @@
 """Azure client for resource discovery and authentication."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from azure.identity import DefaultAzureCredential, ChainedTokenCredential, AzureCliCredential, ManagedIdentityCredential
 from azure.mgmt.resource import ResourceManagementClient
@@ -26,7 +26,15 @@ class AzureClient:
             credential: Azure credential object. If None, will use DefaultAzureCredential.
         """
         self.credential = credential or self._get_default_credential()
-        self.subscription_id = subscription_id or self._get_subscription_id()
+        self.subscription_id = subscription_id
+        self.subscription_name = None
+        
+        # Get subscription info if not provided
+        if not self.subscription_id:
+            self.subscription_id, self.subscription_name = self._get_subscription_info()
+        else:
+            # Get name for provided subscription ID
+            self.subscription_name = self._get_subscription_name(self.subscription_id)
         
         # Initialize management clients
         self.resource_client = ResourceManagementClient(
@@ -42,7 +50,7 @@ class AzureClient:
             subscription_id=self.subscription_id
         )
         
-        logger.info(f"Initialized Azure client for subscription: {self.subscription_id}")
+        logger.info(f"Initialized Azure client for subscription: {self.subscription_name} ({self.subscription_id})")
     
     def _get_default_credential(self) -> ChainedTokenCredential:
         """Get default Azure credential chain."""
@@ -52,16 +60,27 @@ class AzureClient:
             DefaultAzureCredential()
         )
     
-    def _get_subscription_id(self) -> str:
-        """Get first available subscription ID."""
+    def _get_subscription_info(self) -> Tuple[str, str]:
+        """Get first available subscription ID and name."""
         try:
             subscription_client = SubscriptionClient(self.credential)
             subscriptions = list(subscription_client.subscriptions.list())
             if not subscriptions:
                 raise ValueError("No Azure subscriptions found")
-            return subscriptions[0].subscription_id
+            first_sub = subscriptions[0]
+            return first_sub.subscription_id, first_sub.display_name
         except AzureError as e:
             raise ValueError(f"Failed to get Azure subscription: {e}") from e
+    
+    def _get_subscription_name(self, subscription_id: str) -> str:
+        """Get subscription display name for a given subscription ID."""
+        try:
+            subscription_client = SubscriptionClient(self.credential)
+            subscription = subscription_client.subscriptions.get(subscription_id)
+            return subscription.display_name
+        except AzureError as e:
+            logger.warning(f"Failed to get subscription name for {subscription_id}: {e}")
+            return subscription_id  # Fallback to ID if name unavailable
     
     def test_authentication(self) -> bool:
         """Test Azure authentication and permissions.
