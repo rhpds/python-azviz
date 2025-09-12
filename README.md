@@ -16,7 +16,7 @@ Python AzViz generates visual diagrams of Azure Resource Groups and their depend
 - **Network Topology Mapping**: Maps VNets, subnets, and network relationships
 - **VM Power State Visualization**: Shows running/stopped status with color coding
 - **Visual Themes**: Light, dark, and neon color schemes
-- **Multiple Formats**: PNG and SVG output support
+- **Multiple Formats**: PNG, SVG, and interactive HTML output support
 - **Flexible Filtering**: Include/exclude specific resource types
 - **Icon Integration**: 40+ Azure service icons for visual clarity
 - **Hybrid Layout**: Horizontal resource groups with vertical resource stacking
@@ -43,7 +43,7 @@ brew install graphviz
 **Windows:**
 Download from https://graphviz.org/download/
 
-### Option 1: Install Python AzViz (Future)
+### Option 1: Install Python AzViz
 ```bash
 pip install python-azviz
 ```
@@ -104,6 +104,9 @@ python-azviz export --resource-group my-rg --output diagram.png
 # With custom theme and format
 python-azviz export --resource-group my-rg --theme dark --format svg --output diagram.svg
 
+# Interactive HTML output
+python-azviz export --resource-group my-rg --format html --output diagram.html
+
 # Multiple resource groups
 python-azviz export -g rg1 -g rg2 -g rg3 --output multi-rg.png
 ```
@@ -125,6 +128,7 @@ Python AzViz supports multiple authentication methods:
 ### Output Formats
 - `png`: Portable Network Graphics
 - `svg`: Scalable Vector Graphics
+- `html`: Interactive HTML with zoom, pan, and drag capabilities
 
 ## Examples
 
