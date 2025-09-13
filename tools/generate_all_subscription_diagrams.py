@@ -63,7 +63,7 @@ def check_resource_groups(subscription_name: str, azviz_command: str) -> Tuple[b
     except Exception as e:
         return False, 0, str(e)
 
-def generate_diagram(subscription_name: str, output_dir: Path, azviz_command: str, output_format: str = 'html', theme: str = 'light') -> Tuple[bool, str]:
+def generate_diagram(subscription_name: str, output_dir: Path, azviz_command: str, output_format: str = 'html', theme: str = 'light', include_legend: bool = False) -> Tuple[bool, str]:
     """Generate diagram for a subscription."""
     try:
         # Sanitize subscription name for filename
@@ -74,16 +74,21 @@ def generate_diagram(subscription_name: str, output_dir: Path, azviz_command: st
         print(f"  Generating diagram: {output_file}")
         
         # Generate diagram for all resource groups in the subscription
-        result = subprocess.run([
+        cmd_args = [
             azviz_command,
             'export',
             '--subscription', subscription_name,
             '--format', output_format,
             '--output', str(output_file),
             '--theme', theme,
-            '--verbosity', '2',
-            '--legend'
-        ], capture_output=True, text=True)
+            '--verbosity', '2'
+        ]
+        
+        # Add legend flag only if requested
+        if include_legend:
+            cmd_args.append('--legend')
+        
+        result = subprocess.run(cmd_args, capture_output=True, text=True)
         
         if result.returncode == 0:
             return True, str(output_file)
@@ -126,6 +131,11 @@ def parse_args():
         '--max-subscriptions', '-m',
         type=int,
         help='Maximum number of subscriptions to process (for testing)'
+    )
+    parser.add_argument(
+        '--legend',
+        action='store_true',
+        help='Include legend in diagrams (disabled by default)'
     )
     return parser.parse_args()
 
@@ -182,7 +192,7 @@ def main():
         print(f"    ✅ Found {rg_count} resource group(s) - generating diagram...")
         
         # Generate diagram
-        success, result = generate_diagram(sub_name, args.output_dir, args.azviz_command, args.format, args.theme)
+        success, result = generate_diagram(sub_name, args.output_dir, args.azviz_command, args.format, args.theme, args.legend)
         
         if success:
             print(f"    🎨 Diagram created: {result}")

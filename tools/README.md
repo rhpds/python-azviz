@@ -33,6 +33,9 @@ python tools/generate_all_subscription_diagrams.py --max-subscriptions 5
 
 # Custom theme
 python tools/generate_all_subscription_diagrams.py --theme dark --format svg
+
+# Include legends in diagrams
+python tools/generate_all_subscription_diagrams.py --legend
 ```
 
 #### Options
@@ -44,6 +47,7 @@ python tools/generate_all_subscription_diagrams.py --theme dark --format svg
 | `--format` | `-f` | `html` | Output format (png, svg, html) |
 | `--theme` | `-t` | `light` | Visual theme (light, dark, neon) |
 | `--max-subscriptions` | `-m` | None | Maximum subscriptions to process |
+| `--legend` | | False | Include legend in diagrams (disabled by default) |
 
 #### Output
 
