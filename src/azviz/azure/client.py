@@ -529,33 +529,61 @@ class AzureClient:
                     dns_zone_name = vnet_link.name.split('/')[0] if '/' in vnet_link.name else vnet_link.name
                     link_name = vnet_link.name.split('/')[-1] if '/' in vnet_link.name else vnet_link.name
                     
-                    # Use Azure CLI to get VNet link details (more reliable than SDK for Private DNS)
-                    import subprocess
-                    import json
-                    
-                    result = subprocess.run([
-                        'az', 'network', 'private-dns', 'link', 'vnet', 'show',
-                        '--resource-group', vnet_link.resource_group,
-                        '--zone-name', dns_zone_name,
-                        '--name', link_name,
-                        '--query', 'virtualNetwork.id',
-                        '-o', 'json'
-                    ], capture_output=True, text=True, check=True)
-                    
-                    vnet_id = json.loads(result.stdout)
-                    if vnet_id:
-                        # Extract VNet name from resource ID
-                        vnet_name = self._extract_resource_name_from_id(vnet_id)
+                    # Try to use SDK first, fall back to Azure CLI if needed
+                    try:
+                        # Use the network management client to get virtual network links
+                        # Note: This requires azure-mgmt-privatedns which might not be available
+                        vnet_link_details = self.network_client.virtual_network_links.get(
+                            vnet_link.resource_group,
+                            dns_zone_name,
+                            link_name
+                        )
                         
-                        # Find the corresponding VNet resource
-                        for vnet in vnets:
-                            if vnet.name == vnet_name:
-                                vnet_link.dependencies.append(vnet.name)
-                                logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
-                                break
+                        if hasattr(vnet_link_details, 'virtual_network') and vnet_link_details.virtual_network:
+                            vnet_id = vnet_link_details.virtual_network.id
+                            vnet_name = self._extract_resource_name_from_id(vnet_id)
+                            
+                            # Find the corresponding VNet resource
+                            for vnet in vnets:
+                                if vnet.name == vnet_name:
+                                    vnet_link.dependencies.append(vnet.name)
+                                    logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
+                                    break
+                    except AttributeError:
+                        # SDK doesn't have private DNS support, try Azure CLI with better error handling
+                        import subprocess
+                        import json
+                        
+                        result = subprocess.run([
+                            'az', 'network', 'private-dns', 'link', 'vnet', 'show',
+                            '--resource-group', vnet_link.resource_group,
+                            '--zone-name', dns_zone_name,
+                            '--name', link_name,
+                            '--query', 'virtualNetwork.id',
+                            '-o', 'json'
+                        ], capture_output=True, text=True)
+                        
+                        if result.returncode == 0:
+                            vnet_id = json.loads(result.stdout)
+                            if vnet_id:
+                                # Extract VNet name from resource ID
+                                vnet_name = self._extract_resource_name_from_id(vnet_id)
+                                
+                                # Find the corresponding VNet resource
+                                for vnet in vnets:
+                                    if vnet.name == vnet_name:
+                                        vnet_link.dependencies.append(vnet.name)
+                                        logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
+                                        break
+                        else:
+                            # Log as debug instead of warning if it's a common access issue
+                            if "ResourceNotFound" in result.stderr or "exit status 3" in str(result.stderr):
+                                logger.debug(f"VNet link '{vnet_link.name}' not accessible or not found - skipping")
+                            else:
+                                logger.warning(f"Could not get VNet link details for '{vnet_link.name}': {result.stderr}")
                                 
                 except Exception as e:
-                    logger.warning(f"Could not get VNet link details for '{vnet_link.name}': {e}")
+                    logger.debug(f"Could not get VNet link details for '{vnet_link.name}': {e}")
                     continue
             
             # Create relationships from Private DNS Zones to VNets they serve (through VNet links)
@@ -1408,6 +1436,62 @@ class AzureClient:
         
         return resource_id
     
+    def _get_api_version_for_resource_type(self, resource_type: str) -> str:
+        """Get the appropriate API version for a given resource type.
+        
+        Args:
+            resource_type: Azure resource type (e.g., Microsoft.ContainerService/managedClusters).
+            
+        Returns:
+            API version string.
+        """
+        # Map of resource types to their latest stable API versions
+        api_versions = {
+            # Container Service
+            'Microsoft.ContainerService/managedClusters': '2024-09-01',
+            'Microsoft.ContainerService/managedClusterSnapshots': '2024-09-01',
+            'Microsoft.ContainerService/fleets': '2024-04-01',
+            
+            # Compute
+            'Microsoft.Compute/virtualMachines': '2024-07-01',
+            'Microsoft.Compute/virtualMachineScaleSets': '2024-07-01',
+            'Microsoft.Compute/disks': '2024-03-02',
+            'Microsoft.Compute/images': '2024-07-01',
+            'Microsoft.Compute/galleries': '2023-07-03',
+            'Microsoft.Compute/galleries/images': '2023-07-03',
+            'Microsoft.Compute/galleries/images/versions': '2023-07-03',
+            'Microsoft.Compute/sshPublicKeys': '2024-07-01',
+            
+            # Network
+            'Microsoft.Network/virtualNetworks': '2024-01-01',
+            'Microsoft.Network/networkInterfaces': '2024-01-01',
+            'Microsoft.Network/publicIPAddresses': '2024-01-01',
+            'Microsoft.Network/loadBalancers': '2024-01-01',
+            'Microsoft.Network/networkSecurityGroups': '2024-01-01',
+            'Microsoft.Network/routeTables': '2024-01-01',
+            'Microsoft.Network/privateEndpoints': '2024-01-01',
+            'Microsoft.Network/privateLinkServices': '2024-01-01',
+            'Microsoft.Network/dnszones': '2018-05-01',
+            'Microsoft.Network/privateDnsZones': '2020-06-01',
+            'Microsoft.Network/privateDnsZones/virtualNetworkLinks': '2020-06-01',
+            
+            # Storage
+            'Microsoft.Storage/storageAccounts': '2023-05-01',
+            
+            # Identity
+            'Microsoft.ManagedIdentity/userAssignedIdentities': '2023-01-31',
+            
+            # Red Hat OpenShift
+            'Microsoft.RedHatOpenShift/OpenShiftClusters': '2024-08-12-preview',
+            
+            # Web
+            'Microsoft.Web/sites': '2023-12-01',
+            'Microsoft.Web/serverfarms': '2023-12-01',
+        }
+        
+        # Return specific API version if available, otherwise use a recent generic version
+        return api_versions.get(resource_type.lower(), '2023-07-01')
+    
     def get_network_topology(self, resource_group_name: str, location: str) -> NetworkTopology:
         """Get network topology for a resource group using Network Watcher.
         
@@ -1668,9 +1752,11 @@ class AzureClient:
             logger.debug(f"Fetching external resource: {resource_name} of type {full_type} from RG {resource_group}")
             
             # Use Resource Management API to get the resource details
+            # Use appropriate API version based on resource type
+            api_version = self._get_api_version_for_resource_type(full_type)
             resource = self.resource_client.resources.get_by_id(
                 resource_id, 
-                api_version="2021-04-01"  # Generic API version for most resource types
+                api_version=api_version
             )
             
             azure_resource = AzureResource(
@@ -1692,7 +1778,16 @@ class AzureClient:
             return azure_resource
             
         except AzureError as e:
-            logger.warning(f"Could not fetch external resource {resource_id}: {e}")
+            # Provide more specific error messages for common issues
+            error_msg = str(e)
+            if "NoRegisteredProviderFound" in error_msg:
+                logger.debug(f"External resource {resource_name} ({full_type}) not accessible due to provider registration - creating placeholder")
+            elif "ResourceNotFound" in error_msg:
+                logger.debug(f"External resource {resource_name} not found - may have been deleted")
+            elif "Forbidden" in error_msg or "Unauthorized" in error_msg:
+                logger.debug(f"External resource {resource_name} not accessible due to permissions")
+            else:
+                logger.warning(f"Could not fetch external resource {resource_name} ({full_type}): {e}")
             return None
         except Exception as e:
             logger.warning(f"Error parsing external resource ID {resource_id}: {e}")
