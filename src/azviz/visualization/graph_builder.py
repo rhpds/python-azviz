@@ -8,8 +8,9 @@ import networkx as nx
 from networkx.drawing.nx_agraph import write_dot
 
 from ..core.models import (
-    AzureResource, NetworkTopology, GraphNode, GraphEdge, 
-    VisualizationConfig, ResourceRanking, LabelVerbosity
+    AzureResource, NetworkTopology, GraphNode, GraphEdge,
+    VisualizationConfig, ResourceRanking, LabelVerbosity,
+    ResourceDependency, DependencyType
 )
 
 logger = logging.getLogger(__name__)
@@ -361,7 +362,17 @@ class GraphBuilder:
         self._create_dns_zone_connections(resources, resource_by_name)
         
         for resource in resources:
-            for dep_name in resource.dependencies:
+            for dependency in resource.dependencies:
+                # Handle both old string format and new ResourceDependency format
+                if isinstance(dependency, str):
+                    dep_name = dependency
+                    dependency_type = DependencyType.EXPLICIT
+                    description = None
+                else:
+                    dep_name = dependency.target_name
+                    dependency_type = dependency.dependency_type
+                    description = dependency.description
+
                 if dep_name in resource_by_name:
                     dep_resource = resource_by_name[dep_name]
                     
@@ -456,16 +467,31 @@ class GraphBuilder:
                         }
                         label = 'secures'
                     # For VM-storage account dependencies, create a connection to show storage usage
-                    elif (resource.resource_type == 'Microsoft.Compute/virtualMachines' and 
+                    elif (resource.resource_type == 'Microsoft.Compute/virtualMachines' and
                           dep_resource.resource_type == 'Microsoft.Storage/storageAccounts'):
-                        edge_attrs = {
-                            'style': 'dashed',
-                            'color': 'brown',
-                            'penwidth': '2',
-                            'weight': '4',  # Medium weight for positioning
-                            'minlen': '1'   # Minimum length for closer positioning
-                        }
-                        label = 'stores data'
+                        # Check if this is a derived connection and style accordingly
+                        if dependency_type == DependencyType.DERIVED:
+                            edge_attrs = {
+                                'style': 'dotted',
+                                'color': 'orange',
+                                'penwidth': '2',
+                                'weight': '3',  # Lower weight for derived connections
+                                'minlen': '1'
+                            }
+                            # Create a more descriptive label for derived connections
+                            if description:
+                                label = f'derived storage ({description})'
+                            else:
+                                label = 'derived storage'
+                        else:
+                            edge_attrs = {
+                                'style': 'dashed',
+                                'color': 'brown',
+                                'penwidth': '2',
+                                'weight': '4',  # Medium weight for positioning
+                                'minlen': '1'   # Minimum length for closer positioning
+                            }
+                            label = 'stores data'
                     # For VNet-subnet dependencies, create a connection to show containment
                     elif (resource.resource_type == 'Microsoft.Network/virtualNetworks' and 
                           dep_resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets'):
@@ -643,11 +669,24 @@ class GraphBuilder:
                         }
                         label = 'serves API for'
                     else:
-                        edge_attrs = {
-                            'style': 'dashed',
-                            'color': 'red'
-                        }
-                        label = 'depends on'
+                        # Check if this is a derived dependency and style accordingly
+                        if dependency_type == DependencyType.DERIVED:
+                            edge_attrs = {
+                                'style': 'dotted',
+                                'color': 'orange',
+                                'penwidth': '1'
+                            }
+                            # Create a more descriptive label for derived connections
+                            if description:
+                                label = f'derived ({description})'
+                            else:
+                                label = 'derived'
+                        else:
+                            edge_attrs = {
+                                'style': 'dashed',
+                                'color': 'red'
+                            }
+                            label = 'depends on'
                     
                     edge = GraphEdge(
                         source=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
@@ -678,11 +717,12 @@ class GraphBuilder:
                 matching_resources = []
                 for resource in resources:
                     name_matches = False
-                    
+                    is_pattern_match = False  # Track if this is a derived connection
+
                     # For OpenShift clusters, check actual DNS configuration and DNS records
-                    if (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and 
+                    if (resource.resource_type == 'Microsoft.RedHatOpenShift/OpenShiftClusters' and
                         'openshift_dns_domains' in resource.properties):
-                        
+
                         dns_domains = resource.properties['openshift_dns_domains']
                         for domain in dns_domains:
                             # Check if DNS zone domain is a parent domain for any cluster domain
@@ -690,9 +730,10 @@ class GraphBuilder:
                             dns_zone_domain = '.'.join(dns_zone.name.split('.')[1:])  # Skip subdomain part
                             if dns_zone_domain and dns_zone_domain in domain:
                                 name_matches = True
+                                is_pattern_match = False  # This is explicit DNS configuration
                                 logger.info(f"DNS zone '{dns_zone.name}' serves OpenShift cluster '{resource.name}' domain '{domain}'")
                                 break
-                        
+
                         # Also check if the DNS zone might have custom records pointing to OpenShift cluster IPs
                         if not name_matches and 'openshift_cluster_ips' in resource.properties:
                             cluster_ips = resource.properties['openshift_cluster_ips']
@@ -704,38 +745,53 @@ class GraphBuilder:
                         name_matches = (
                             base_name.lower() in resource.name.lower() or
                             # Look for common patterns between DNS zone and resource names
-                            any(part in dns_zone.name.lower() and part in resource.name.lower() 
+                            any(part in dns_zone.name.lower() and part in resource.name.lower()
                                 for part in ["hypershift", "mgmt"] if len(part) > 3) or
                             # Extract any meaningful parts from DNS zone name and check if they appear in resource name
-                            any(part in resource.name.lower() for part in dns_zone.name.lower().replace('.', ' ').split() 
+                            any(part in resource.name.lower() for part in dns_zone.name.lower().replace('.', ' ').split()
                                 if len(part) >= 4 and part.isalnum())
                         )
-                    
-                    if (resource != dns_zone and 
+                        is_pattern_match = name_matches  # This is pattern-based matching
+
+                    if (resource != dns_zone and
                         name_matches and
                         resource.resource_type in [
                             'Microsoft.Network/virtualNetworks',
-                            'Microsoft.Compute/virtualMachines', 
+                            'Microsoft.Compute/virtualMachines',
                             'Microsoft.Network/loadBalancers',
                             'Microsoft.RedHatOpenShift/OpenShiftClusters',
                             'Microsoft.ContainerService/managedClusters'
                         ]):
-                        matching_resources.append(resource)
-                
+                        matching_resources.append((resource, is_pattern_match))
+
                 # Create edges from DNS zone to matching infrastructure
-                for resource in matching_resources:
-                    edge = GraphEdge(
-                        source=f"{dns_zone.category.lower()}_{dns_zone.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
-                        target=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
-                        label='provides DNS for',
-                        edge_type='dns_service',
-                        attributes={
+                for resource, is_pattern_match in matching_resources:
+                    # Style based on whether this is a pattern match (derived) or explicit configuration
+                    if is_pattern_match:
+                        edge_attrs = {
+                            'style': 'dotted',
+                            'color': 'orange',
+                            'penwidth': '2',
+                            'weight': '2',  # Lower weight to avoid interfering with main topology
+                            'minlen': '2'   # Allow some distance
+                        }
+                        label = 'provides DNS for (derived)'
+                    else:
+                        edge_attrs = {
                             'style': 'dashed',
                             'color': 'darkgreen',
                             'penwidth': '2',
                             'weight': '2',  # Lower weight to avoid interfering with main topology
                             'minlen': '2'   # Allow some distance
                         }
+                        label = 'provides DNS for'
+
+                    edge = GraphEdge(
+                        source=f"{dns_zone.category.lower()}_{dns_zone.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        target=f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_'),
+                        label=label,
+                        edge_type='dns_service',
+                        attributes=edge_attrs
                     )
                     self.edges.append(edge)
     
@@ -757,14 +813,18 @@ class GraphBuilder:
                 **safe_attributes
             })
             
-            # Store complex properties separately for DOT generation access
+            # Store only essential properties for DOT generation to avoid massive node declarations
             if 'properties' in node.attributes and isinstance(node.attributes['properties'], dict):
+                # Define which properties to include in DOT (keep it minimal to avoid huge canvas)
+                essential_props = {
+                    'is_external_dependency', 'is_placeholder', 'is_cross_tenant',
+                    'access_note', 'tenant_note', 'hide_provider'
+                }
+
                 for prop_key, prop_value in node.attributes['properties'].items():
-                    if isinstance(prop_value, (str, int, float, bool)):
+                    # Only include essential properties and exclude verbose ones
+                    if prop_key in essential_props and isinstance(prop_value, (str, int, float, bool)):
                         self.graph.nodes[node.id][f'prop_{prop_key}'] = prop_value
-                    elif isinstance(prop_value, list):
-                        # Store list properties as string representations for safety
-                        self.graph.nodes[node.id][f'prop_{prop_key}'] = str(prop_value)
         
         # Add edges
         for edge in self.edges:

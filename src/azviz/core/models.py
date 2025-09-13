@@ -1,7 +1,7 @@
 """Data models and enums for AzViz."""
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
@@ -42,6 +42,20 @@ class Splines(str, Enum):
     SPLINE = "spline"
 
 
+class DependencyType(str, Enum):
+    """Types of dependencies between resources."""
+    EXPLICIT = "explicit"  # Direct Azure API relationship
+    DERIVED = "derived"   # Inferred from patterns/heuristics
+
+
+@dataclass
+class ResourceDependency:
+    """Represents a dependency between Azure resources."""
+    target_name: str
+    dependency_type: DependencyType = DependencyType.EXPLICIT
+    description: Optional[str] = None
+
+
 @dataclass
 class AzureResource:
     """Represents an Azure resource."""
@@ -53,7 +67,22 @@ class AzureResource:
     subscription_id: str
     properties: Dict[str, Any] = field(default_factory=dict)
     tags: Dict[str, str] = field(default_factory=dict)
-    dependencies: List[str] = field(default_factory=list)
+    dependencies: List[Union[str, ResourceDependency]] = field(default_factory=list)
+
+    def add_dependency(self, target_name: str, dependency_type: DependencyType = DependencyType.EXPLICIT, description: Optional[str] = None):
+        """Add a dependency with type information."""
+        dependency = ResourceDependency(target_name, dependency_type, description)
+        self.dependencies.append(dependency)
+
+    def get_dependency_names(self) -> List[str]:
+        """Get all dependency target names (for backward compatibility)."""
+        names = []
+        for dep in self.dependencies:
+            if isinstance(dep, str):
+                names.append(dep)
+            else:
+                names.append(dep.target_name)
+        return names
     
     
 @dataclass  

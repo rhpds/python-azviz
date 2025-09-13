@@ -120,6 +120,10 @@ python-azviz export --subscription "My Production Subscription" --output prod.pn
 # Using subscription by ID
 python-azviz export --subscription "12345678-1234-1234-1234-123456789012" --output prod.png
 
+# Verbose output for debugging (shows Graphviz warnings)
+python-azviz export --verbose --resource-group my-rg --output diagram.png
+python-azviz export -v --resource-group my-rg --output diagram.png
+
 # List resource groups in specific subscription
 python-azviz list-rg --subscription "My Dev Subscription"
 
@@ -152,6 +156,10 @@ Python AzViz supports multiple authentication methods:
 - `png`: Portable Network Graphics
 - `svg`: Scalable Vector Graphics
 - `html`: Interactive HTML with zoom, pan, and drag capabilities
+
+### Verbose Output
+- **Normal mode**: Clean output with Graphviz warnings suppressed
+- **Verbose mode** (`--verbose` or `-v`): Shows all debug information including Graphviz warnings and processing details
 
 ### Supported Azure Resources
 Python AzViz automatically discovers and visualizes these Azure resource types with proper relationships:

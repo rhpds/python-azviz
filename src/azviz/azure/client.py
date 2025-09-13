@@ -10,7 +10,7 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.subscription import SubscriptionClient
 from azure.core.exceptions import AzureError
 
-from ..core.models import AzureResource, NetworkTopology
+from ..core.models import AzureResource, NetworkTopology, DependencyType, ResourceDependency
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +246,15 @@ class AzureClient:
             
             # Discover OpenShift cluster relationships
             self._discover_openshift_cluster_relationships(resources)
+
+            # Discover Solutions application relationships
+            self._discover_solutions_application_relationships(resources)
+
+            # Discover Application Gateway relationships
+            self._discover_application_gateway_relationships(resources)
+
+            # Discover VM extension relationships
+            self._discover_vm_extension_relationships(resources)
             
             # Add VNets and establish proper network hierarchy
             self._add_vnets_and_establish_network_hierarchy(resources)
@@ -302,7 +311,7 @@ class AzureClient:
                     # Add dependencies for attached disks
                     for disk in disks:
                         if disk.name in attached_disk_names:
-                            vm.dependencies.append(disk.name)
+                            vm.add_dependency(disk.name, DependencyType.EXPLICIT, "Azure API - disk attachment")
                             logger.debug(f"Added disk dependency: {vm.name} -> {disk.name}")
                             
                 except Exception as e:
@@ -359,7 +368,7 @@ class AzureClient:
                                     if (public_key_config.key_data and 
                                         public_key_config.key_data.strip() == ssh_public_key_data):
                                         # VM uses this SSH key - create dependency
-                                        vm.dependencies.append(ssh_key.name)
+                                        vm.add_dependency(ssh_key.name, DependencyType.EXPLICIT, "Azure API - SSH key configuration")
                                         logger.debug(f"Added SSH key dependency: {vm.name} -> {ssh_key.name}")
                                         break
                                         
@@ -399,7 +408,7 @@ class AzureClient:
                     # Find the corresponding gallery
                     for gallery in galleries:
                         if gallery.name == gallery_name:
-                            gallery_image.dependencies.append(gallery.name)
+                            gallery_image.add_dependency(gallery.name, DependencyType.EXPLICIT, "Azure API - gallery hierarchy")
                             logger.debug(f"Added gallery dependency: {gallery_image.name} -> {gallery.name}")
                             break
             
@@ -416,7 +425,7 @@ class AzureClient:
                     # Find the corresponding gallery image
                     for gallery_image in gallery_images:
                         if gallery_image.name == gallery_image_name:
-                            gallery_version.dependencies.append(gallery_image.name)
+                            gallery_version.add_dependency(gallery_image.name, DependencyType.EXPLICIT, "Azure API - gallery hierarchy")
                             logger.debug(f"Added gallery image dependency: {gallery_version.name} -> {gallery_image.name}")
                             break
                             
@@ -476,7 +485,7 @@ class AzureClient:
                                 # Find the corresponding managed identity resource
                                 for managed_identity in managed_identities:
                                     if managed_identity.name == identity_name:
-                                        resource.dependencies.append(managed_identity.name)
+                                        resource.add_dependency(managed_identity.name, DependencyType.EXPLICIT, "Azure API - managed identity assignment")
                                         logger.debug(f"Added managed identity dependency: {resource.name} -> {managed_identity.name}")
                                         break
                         
@@ -518,7 +527,7 @@ class AzureClient:
                     # Find the corresponding Private DNS Zone
                     for dns_zone in private_dns_zones:
                         if dns_zone.name == dns_zone_name:
-                            vnet_link.dependencies.append(dns_zone.name)
+                            vnet_link.add_dependency(dns_zone.name, DependencyType.EXPLICIT, "Azure API - private DNS zone link")
                             logger.debug(f"Added Private DNS Zone dependency: {vnet_link.name} -> {dns_zone.name}")
                             break
             
@@ -546,7 +555,7 @@ class AzureClient:
                             # Find the corresponding VNet resource
                             for vnet in vnets:
                                 if vnet.name == vnet_name:
-                                    vnet_link.dependencies.append(vnet.name)
+                                    vnet_link.add_dependency(vnet.name, DependencyType.EXPLICIT, "Azure API - VNet link connection")
                                     logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
                                     break
                     except AttributeError:
@@ -556,6 +565,7 @@ class AzureClient:
                         
                         result = subprocess.run([
                             'az', 'network', 'private-dns', 'link', 'vnet', 'show',
+                            '--subscription', self.subscription_id,
                             '--resource-group', vnet_link.resource_group,
                             '--zone-name', dns_zone_name,
                             '--name', link_name,
@@ -572,7 +582,7 @@ class AzureClient:
                                 # Find the corresponding VNet resource
                                 for vnet in vnets:
                                     if vnet.name == vnet_name:
-                                        vnet_link.dependencies.append(vnet.name)
+                                        vnet_link.add_dependency(vnet.name, DependencyType.EXPLICIT, "Azure API - VNet link connection")
                                         logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
                                         break
                         else:
@@ -601,7 +611,7 @@ class AzureClient:
                         # Find VNet resources in dependencies
                         for vnet in vnets:
                             if vnet.name == dep_name:
-                                private_dns_zone.dependencies.append(vnet.name)
+                                private_dns_zone.add_dependency(vnet.name, DependencyType.EXPLICIT, "Azure API - DNS resolution for VNet")
                                 logger.debug(f"Added VNet dependency for DNS resolution: {private_dns_zone.name} -> {vnet.name}")
                                 break
                                 
@@ -649,7 +659,7 @@ class AzureClient:
                                         # Find the corresponding subnet resource
                                         for subnet in subnets:
                                             if subnet.name == full_subnet_name:
-                                                subnet.dependencies.append(route_table.name)
+                                                subnet.add_dependency(route_table.name, DependencyType.EXPLICIT, "Azure API - route table association")
                                                 logger.debug(f"Added route table dependency: {subnet.name} -> {route_table.name}")
                                                 break
                                 
@@ -698,6 +708,7 @@ class AzureClient:
                     # Get record sets with metadata
                     result = subprocess.run([
                         'az', 'network', 'dns', 'record-set', 'list',
+                        '--subscription', self.subscription_id,
                         '--resource-group', dns_zone.resource_group,
                         '--zone-name', dns_zone.name,
                         '--query', '[].{name:name, type:type, metadata:metadata}',
@@ -722,20 +733,20 @@ class AzureClient:
                         # Connect to load balancers with matching cluster name
                         for lb in all_load_balancers:
                             if cluster_name in lb.name.lower():
-                                dns_zone.dependencies.append(lb.name)
-                                logger.debug(f"Added DNS-LoadBalancer dependency: {dns_zone.name} -> {lb.name}")
-                        
+                                dns_zone.add_dependency(lb.name, DependencyType.DERIVED, "DNS cluster name pattern match")
+                                logger.debug(f"Added DNS-LoadBalancer dependency: {dns_zone.name} -> {lb.name} (derived)")
+
                         # Connect to public IPs with matching cluster name
                         for pip in all_public_ips:
                             if cluster_name in pip.name.lower():
-                                dns_zone.dependencies.append(pip.name)
-                                logger.debug(f"Added DNS-PublicIP dependency: {dns_zone.name} -> {pip.name}")
-                        
+                                dns_zone.add_dependency(pip.name, DependencyType.DERIVED, "DNS cluster name pattern match")
+                                logger.debug(f"Added DNS-PublicIP dependency: {dns_zone.name} -> {pip.name} (derived)")
+
                         # Connect to master VMs with matching cluster name (they serve the API)
                         for master_vm in all_master_vms:
                             if cluster_name in master_vm.name.lower():
-                                dns_zone.dependencies.append(master_vm.name)
-                                logger.debug(f"Added DNS-Master dependency: {dns_zone.name} -> {master_vm.name}")
+                                dns_zone.add_dependency(master_vm.name, DependencyType.DERIVED, "DNS cluster name pattern match")
+                                logger.debug(f"Added DNS-Master dependency: {dns_zone.name} -> {master_vm.name} (derived)")
                                 
                 except Exception as e:
                     logger.warning(f"Could not analyze DNS zone records for '{dns_zone.name}': {e}")
@@ -775,7 +786,7 @@ class AzureClient:
                         # Find the corresponding private endpoint resource
                         for pe in private_endpoints:
                             if pe.name == pe_name:
-                                pe.dependencies.append(nic.name)
+                                pe.add_dependency(nic.name, DependencyType.EXPLICIT, "Azure API - private endpoint NIC")
                                 logger.debug(f"Added NIC dependency: {pe.name} -> {nic.name}")
                                 break
                     
@@ -787,7 +798,7 @@ class AzureClient:
                         # Find the corresponding private link service resource
                         for pls in private_link_services:
                             if pls.name == pls_name:
-                                pls.dependencies.append(nic.name)
+                                pls.add_dependency(nic.name, DependencyType.EXPLICIT, "Azure API - private link service NIC")
                                 logger.debug(f"Added NIC dependency: {pls.name} -> {nic.name}")
                                 break
                             
@@ -835,7 +846,7 @@ class AzureClient:
                                         # Find the corresponding load balancer resource
                                         for lb in load_balancers:
                                             if lb.name == lb_name:
-                                                pls.dependencies.append(lb.name)
+                                                pls.add_dependency(lb.name, DependencyType.EXPLICIT, "Azure API - private link service load balancer")
                                                 logger.debug(f"Added load balancer dependency: {pls.name} -> {lb.name}")
                                                 break
                             
@@ -953,7 +964,7 @@ class AzureClient:
                                 
                                 # Add dependency from PE to subnet (subnet should already exist from _discover_all_subnets)
                                 subnet_full_name = f"{vnet_name}/{subnet_name}"
-                                pe.dependencies.append(subnet_full_name)
+                                pe.add_dependency(subnet_full_name, DependencyType.EXPLICIT, "Azure API - private endpoint subnet placement")
                                 logger.debug(f"Added subnet dependency: {pe.name} -> {subnet_full_name}")
                     
                     # Check for private link service connections (both automatic and manual)
@@ -1036,7 +1047,7 @@ class AzureClient:
                                         subnet_full_name = f"{vnet_name}/{subnet_name}"
                                         
                                         # Add dependency from NIC to subnet
-                                        nic.dependencies.append(subnet_full_name)
+                                        nic.add_dependency(subnet_full_name, DependencyType.EXPLICIT, "Azure API - NIC subnet placement")
                                         logger.debug(f"Added subnet dependency: {nic.name} -> {subnet_full_name}")
                                         break  # Only need one subnet per NIC
                             
@@ -1081,7 +1092,7 @@ class AzureClient:
                 
                 # Add dependencies from Internet to public IPs
                 for pip in public_ips:
-                    internet_resource.dependencies.append(pip.name)
+                    internet_resource.add_dependency(pip.name, DependencyType.EXPLICIT, "Virtual - internet gateway to public IP")
                     logger.debug(f"Added public IP dependency: Internet -> {pip.name}")
             
             # Discover NSG-to-subnet relationships
@@ -1108,7 +1119,7 @@ class AzureClient:
                                         subnet_full_name = f"{vnet_name}/{subnet_name}"
                                         
                                         # Add dependency from NSG to subnet
-                                        nsg.dependencies.append(subnet_full_name)
+                                        nsg.add_dependency(subnet_full_name, DependencyType.EXPLICIT, "Azure API - NSG subnet association")
                                         logger.debug(f"Added subnet dependency: {nsg.name} -> {subnet_full_name}")
                 
                 except Exception as e:
@@ -1156,7 +1167,7 @@ class AzureClient:
                                 # Find the corresponding storage account
                                 for sa in storage_accounts:
                                     if sa.name == storage_name:
-                                        vm.dependencies.append(sa.name)
+                                        vm.add_dependency(sa.name, DependencyType.EXPLICIT, "Azure API - VM boot diagnostics storage")
                                         logger.debug(f"Added storage dependency: {vm.name} -> {sa.name} (boot diagnostics)")
                                         break
                     
@@ -1176,14 +1187,49 @@ class AzureClient:
                                 # Find the corresponding storage account
                                 for sa in storage_accounts:
                                     if sa.name == storage_name:
-                                        vm.dependencies.append(sa.name)
+                                        vm.add_dependency(sa.name, DependencyType.EXPLICIT, "Azure API - VM unmanaged disk storage")
                                         logger.debug(f"Added storage dependency: {vm.name} -> {sa.name} (unmanaged disk)")
                                         break
                 
                 except Exception as e:
                     logger.warning(f"Could not get VM details for '{vm.name}': {e}")
                     continue
-            
+
+            # Add pattern-based storage account relationships for accounts that might be VM-related
+            for sa in storage_accounts:
+                sa_name_lower = sa.name.lower()
+                # Look for VMs with similar naming patterns
+                for vm in vms:
+                    vm_name_lower = vm.name.lower()
+
+                    # Check for common naming patterns:
+                    # 1. Storage account contains VM name (e.g., "winansible4697" contains "win")
+                    # 2. VM name contains storage account prefix (e.g., "WIN-ansible" and "winansible4697")
+                    # 3. Similar prefixes with random suffixes
+
+                    # Extract base names for comparison (remove common suffixes/prefixes)
+                    vm_base = vm_name_lower.replace('-', '').replace('_', '')
+                    sa_base = sa_name_lower.replace('-', '').replace('_', '')
+
+                    # Check if there's significant overlap in the names
+                    if len(vm_base) >= 3 and len(sa_base) >= 3:
+                        # Method 1: Check if storage account starts with VM name or vice versa
+                        if (vm_base.startswith(sa_base[:6]) or sa_base.startswith(vm_base[:6]) or
+                            vm_base in sa_base or sa_base in vm_base):
+                            # Avoid already connected dependencies
+                            if sa.name not in vm.get_dependency_names():
+                                vm.add_dependency(sa.name, DependencyType.DERIVED, "naming pattern match")
+                                logger.debug(f"Added storage dependency: {vm.name} -> {sa.name} (naming pattern match)")
+
+                        # Method 2: Check for common prefixes (like "win" in both "WIN-ansible" and "winansible4697")
+                        elif len(vm_base) >= 4 and len(sa_base) >= 4:
+                            vm_prefix = vm_base[:4]
+                            sa_prefix = sa_base[:4]
+                            if vm_prefix == sa_prefix:
+                                if sa.name not in vm.get_dependency_names():
+                                    vm.add_dependency(sa.name, DependencyType.DERIVED, "prefix pattern match")
+                                    logger.debug(f"Added storage dependency: {vm.name} -> {sa.name} (prefix pattern match)")
+
             # For ARO/OpenShift clusters, connect storage accounts to master nodes
             # as they typically manage cluster storage
             if storage_accounts and vms:
@@ -1224,7 +1270,7 @@ class AzureClient:
                         # Connect to ALL master nodes since they all manage cluster resources
                         for master_vm in master_vms:
                             for sa in cluster_storage_accounts:
-                                master_vm.dependencies.append(sa.name)
+                                master_vm.add_dependency(sa.name, DependencyType.DERIVED, "cluster storage pattern")
                                 logger.debug(f"Added cluster storage dependency: {master_vm.name} -> {sa.name} (cluster storage)")
                     else:
                         # If no masters, connect to any VM that might be a controller
@@ -1233,7 +1279,7 @@ class AzureClient:
                             # Connect to all controller VMs for consistency
                             for controller_vm in controller_vms:
                                 for sa in cluster_storage_accounts:
-                                    controller_vm.dependencies.append(sa.name)
+                                    controller_vm.add_dependency(sa.name, DependencyType.DERIVED, "cluster storage pattern")
                                     logger.debug(f"Added cluster storage dependency: {controller_vm.name} -> {sa.name} (cluster storage)")
             
         except Exception as e:
@@ -1285,7 +1331,7 @@ class AzureClient:
                         logger.debug(f"Created virtual VNet resource: {vnet_name}")
                     
                     # Add dependency from VNet to subnet
-                    created_vnets[vnet_name].dependencies.append(subnet.name)
+                    created_vnets[vnet_name].add_dependency(subnet.name, DependencyType.EXPLICIT, "Azure API - VNet subnet containment")
                     logger.debug(f"Added subnet dependency: {vnet_name} -> {subnet.name}")
             
             # Establish PE → VNet relationships (PE belongs to VNet, not directly to subnet)
@@ -1294,7 +1340,7 @@ class AzureClient:
                     vnet_name = pe.properties['vnet_name']
                     if vnet_name in created_vnets:
                         # Add dependency from VNet to PE (VNet contains PE)
-                        created_vnets[vnet_name].dependencies.append(pe.name)
+                        created_vnets[vnet_name].add_dependency(pe.name, DependencyType.EXPLICIT, "Azure API - VNet private endpoint containment")
                         logger.debug(f"Added PE dependency: {vnet_name} -> {pe.name}")
                         
                         # Remove direct PE → subnet dependency since PE now belongs to VNet
@@ -1341,70 +1387,70 @@ class AzureClient:
                     # Find VNets that match the cluster name (often named vnet-{cluster-name})
                     for vnet in vnets:
                         vnet_name_lower = vnet.name.lower()
-                        if (cluster_name_base in vnet_name_lower or 
+                        if (cluster_name_base in vnet_name_lower or
                             vnet_name_lower.startswith('vnet-') and cluster_name_base in vnet_name_lower or
                             'openshift' in vnet_name_lower):
-                            cluster.dependencies.append(vnet.name)
-                            logger.info(f"Added VNet dependency: {cluster.name} -> {vnet.name}")
-                    
+                            cluster.add_dependency(vnet.name, DependencyType.DERIVED, "cluster name pattern match")
+                            logger.info(f"Added VNet dependency: {cluster.name} -> {vnet.name} (derived)")
+
                     # Find subnets that likely belong to this cluster
                     # Look for patterns like cluster-name, master, worker subnets
                     cluster_subnets = []
                     for subnet in subnets:
                         subnet_name_lower = subnet.name.lower()
-                        if (cluster_name_base in subnet_name_lower or 
-                            'master' in subnet_name_lower or 
+                        if (cluster_name_base in subnet_name_lower or
+                            'master' in subnet_name_lower or
                             'worker' in subnet_name_lower or
                             'openshift' in subnet_name_lower or
                             'aro' in subnet_name_lower):
                             cluster_subnets.append(subnet)
-                            cluster.dependencies.append(subnet.name)
-                            logger.info(f"Added subnet dependency: {cluster.name} -> {subnet.name}")
-                    
+                            cluster.add_dependency(subnet.name, DependencyType.DERIVED, "cluster subnet pattern match")
+                            logger.info(f"Added subnet dependency: {cluster.name} -> {subnet.name} (derived)")
+
                     # Find storage accounts that belong to this cluster
                     # Look for registry, cluster storage accounts
                     for sa in storage_accounts:
                         sa_name_lower = sa.name.lower()
-                        if ('registry' in sa_name_lower or 
+                        if ('registry' in sa_name_lower or
                             'cluster' in sa_name_lower or
                             cluster_name_base.replace('-', '') in sa_name_lower or
                             'openshift' in sa_name_lower or
                             'aro' in sa_name_lower):
-                            cluster.dependencies.append(sa.name)
-                            logger.info(f"Added storage dependency: {cluster.name} -> {sa.name}")
-                    
+                            cluster.add_dependency(sa.name, DependencyType.DERIVED, "cluster storage pattern match")
+                            logger.info(f"Added storage dependency: {cluster.name} -> {sa.name} (derived)")
+
                     # Find VMs that are part of this cluster (master and worker nodes)
                     cluster_vms = []
                     for vm in vms:
                         vm_name_lower = vm.name.lower()
                         # Look for VMs with cluster name pattern or master/worker patterns
-                        if (cluster_name_base in vm_name_lower or 
+                        if (cluster_name_base in vm_name_lower or
                             ('master' in vm_name_lower and 'aro' in vm_name_lower) or
                             ('worker' in vm_name_lower and 'aro' in vm_name_lower) or
                             'openshift' in vm_name_lower):
                             cluster_vms.append(vm)
-                            cluster.dependencies.append(vm.name)
-                            logger.info(f"Added VM dependency: {cluster.name} -> {vm.name}")
-                    
+                            cluster.add_dependency(vm.name, DependencyType.DERIVED, "cluster VM pattern match")
+                            logger.info(f"Added VM dependency: {cluster.name} -> {vm.name} (derived)")
+
                     # Find NICs that belong to cluster VMs or infrastructure
                     for nic in nics:
                         nic_name_lower = nic.name.lower()
-                        if (cluster_name_base in nic_name_lower or 
-                            'master' in nic_name_lower or 
+                        if (cluster_name_base in nic_name_lower or
+                            'master' in nic_name_lower or
                             'worker' in nic_name_lower or
                             'openshift' in nic_name_lower or
                             'aro' in nic_name_lower):
-                            cluster.dependencies.append(nic.name)
-                            logger.info(f"Added NIC dependency: {cluster.name} -> {nic.name}")
-                    
+                            cluster.add_dependency(nic.name, DependencyType.DERIVED, "cluster NIC pattern match")
+                            logger.info(f"Added NIC dependency: {cluster.name} -> {nic.name} (derived)")
+
                     # Find load balancers that belong to this cluster
                     for lb in load_balancers:
                         lb_name_lower = lb.name.lower()
-                        if (cluster_name_base in lb_name_lower or 
+                        if (cluster_name_base in lb_name_lower or
                             'openshift' in lb_name_lower or
                             'aro' in lb_name_lower):
-                            cluster.dependencies.append(lb.name)
-                            logger.info(f"Added load balancer dependency: {cluster.name} -> {lb.name}")
+                            cluster.add_dependency(lb.name, DependencyType.DERIVED, "cluster LB pattern match")
+                            logger.info(f"Added load balancer dependency: {cluster.name} -> {lb.name} (derived)")
                     
                     # Set cluster properties for better visualization
                     if cluster.dependencies:
@@ -1420,7 +1466,241 @@ class AzureClient:
         
         except Exception as e:
             logger.warning(f"Failed to discover OpenShift cluster relationships: {e}")
-    
+
+    def _discover_solutions_application_relationships(self, resources: List[AzureResource]):
+        """Discover Solutions application relationships to managed resource groups and add dependencies.
+
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find Solutions applications
+        solutions_apps = [r for r in resources if r.resource_type == 'Microsoft.Solutions/applications']
+
+        if not solutions_apps:
+            return
+
+        try:
+            for app in solutions_apps:
+                try:
+                    logger.info(f"Discovering dependencies for Solutions application: {app.name}")
+
+                    # Get the application details to extract managed resource group
+                    app_details = self.resource_client.resources.get_by_id(
+                        resource_id=f"/subscriptions/{self.subscription_id}/resourceGroups/{app.resource_group}/providers/Microsoft.Solutions/applications/{app.name}",
+                        api_version="2021-07-01"
+                    )
+
+                    if app_details and hasattr(app_details, 'properties') and app_details.properties:
+                        props = app_details.properties
+                        logger.debug(f"Solutions app properties type: {type(props)}")
+
+                        # Try to access properties as dictionary or object
+                        managed_rg_id = None
+
+                        # Method 1: Direct attribute access
+                        if hasattr(props, 'managed_resource_group_id') and props.managed_resource_group_id:
+                            managed_rg_id = props.managed_resource_group_id
+                        elif hasattr(props, 'managedResourceGroupId') and props.managedResourceGroupId:
+                            managed_rg_id = props.managedResourceGroupId
+
+                        # Method 2: Dictionary-like access if props is dict-like
+                        elif hasattr(props, '__getitem__'):
+                            try:
+                                managed_rg_id = props.get('managedResourceGroupId') or props.get('managed_resource_group_id')
+                            except:
+                                pass
+
+                        # Method 3: additional_properties
+                        elif hasattr(props, 'additional_properties') and 'managedResourceGroupId' in props.additional_properties:
+                            managed_rg_id = props.additional_properties['managedResourceGroupId']
+
+                        logger.debug(f"Managed resource group ID found: {managed_rg_id}")
+
+                        if managed_rg_id:
+                            # Extract resource group name from the ID
+                            managed_rg_name = self._extract_resource_group_name_from_id(managed_rg_id)
+                            logger.debug(f"Found managed resource group ID: {managed_rg_id} -> {managed_rg_name}")
+
+                            if managed_rg_name:
+                                logger.info(f"Solutions app {app.name} manages resource group: {managed_rg_name}")
+
+                                # Find all resources in the managed resource group and create dependencies
+                                try:
+                                    # Extract subscription ID from the managed RG ID to ensure we query the right subscription
+                                    managed_subscription_id = managed_rg_id.split('/')[2]
+                                    logger.debug(f"Managed resource group is in subscription: {managed_subscription_id}")
+
+                                    managed_resources = self.resource_client.resources.list_by_resource_group(
+                                        resource_group_name=managed_rg_name
+                                    )
+
+                                    managed_count = 0
+                                    for managed_resource in managed_resources:
+                                        # Create dependency from Solutions app to managed resource (use simple name since cross-RG discovery will add them)
+                                        managed_resource_name = managed_resource.name
+                                        app.add_dependency(managed_resource_name, DependencyType.EXPLICIT, "Azure API - Solutions app managed resource")
+                                        managed_count += 1
+                                        logger.debug(f"Added managed resource dependency: {app.name} -> {managed_resource_name}")
+
+                                    if managed_count > 0:
+                                        app.properties['managed_resource_group'] = managed_rg_name
+                                        app.properties['managed_resource_count'] = managed_count
+                                        logger.info(f"Solutions app {app.name} now manages {managed_count} resources in {managed_rg_name}")
+
+                                except Exception as e:
+                                    logger.warning(f"Could not list resources in managed resource group '{managed_rg_name}': {e}")
+
+                        # Extract other important properties like outputs and parameters
+                        if hasattr(props, 'outputs') and props.outputs:
+                            app.properties['outputs'] = dict(props.outputs)
+                            logger.debug(f"Solutions app {app.name} has outputs: {list(props.outputs.keys())}")
+
+                        if hasattr(props, 'parameters') and props.parameters:
+                            # Only store non-sensitive parameter names/types, not values
+                            param_info = {}
+                            for param_name, param_data in props.parameters.items():
+                                if hasattr(param_data, 'type'):
+                                    param_info[param_name] = param_data.type
+                            app.properties['parameters'] = param_info
+                            logger.debug(f"Solutions app {app.name} has parameters: {list(param_info.keys())}")
+
+                    # Set application properties for better visualization
+                    if app.dependencies:
+                        app.properties['has_dependencies'] = True
+                        app.properties['dependency_count'] = len(app.dependencies)
+                        logger.info(f"Solutions application {app.name} now has {len(app.dependencies)} dependencies")
+                    else:
+                        logger.warning(f"No managed resources found for Solutions application {app.name}")
+
+                except Exception as e:
+                    logger.warning(f"Could not analyze Solutions application '{app.name}': {e}")
+                    continue
+
+        except Exception as e:
+            logger.warning(f"Failed to discover Solutions application relationships: {e}")
+
+    def _discover_application_gateway_relationships(self, resources: List[AzureResource]):
+        """Discover Application Gateway relationships to subnets, public IPs, and WAF policies.
+
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find Application Gateways
+        app_gateways = [r for r in resources if r.resource_type == 'Microsoft.Network/applicationGateways']
+
+        if not app_gateways:
+            return
+
+        # Find related resources
+        public_ips = [r for r in resources if r.resource_type == 'Microsoft.Network/publicIPAddresses']
+        subnets = [r for r in resources if r.resource_type == 'Microsoft.Network/virtualNetworks/subnets']
+        waf_policies = [r for r in resources if r.resource_type == 'Microsoft.Network/applicationGatewayWebApplicationFirewallPolicies']
+
+        try:
+            for app_gw in app_gateways:
+                try:
+                    logger.info(f"Discovering dependencies for Application Gateway: {app_gw.name}")
+
+                    # Get Application Gateway details
+                    app_gw_details = self.network_client.application_gateways.get(
+                        resource_group_name=app_gw.resource_group,
+                        application_gateway_name=app_gw.name
+                    )
+
+                    # Extract WAF policy relationship
+                    if hasattr(app_gw_details, 'firewall_policy') and app_gw_details.firewall_policy:
+                        waf_policy_id = app_gw_details.firewall_policy.id
+                        waf_policy_name = self._extract_resource_name_from_id(waf_policy_id)
+
+                        for waf_policy in waf_policies:
+                            if waf_policy.name == waf_policy_name:
+                                app_gw.add_dependency(waf_policy.name, DependencyType.EXPLICIT, "Azure API - Application Gateway WAF policy")
+                                logger.debug(f"Added WAF policy dependency: {app_gw.name} -> {waf_policy.name}")
+                                break
+
+                    # Extract public IP relationships from frontend IP configurations
+                    if hasattr(app_gw_details, 'frontend_ip_configurations') and app_gw_details.frontend_ip_configurations:
+                        for frontend_ip in app_gw_details.frontend_ip_configurations:
+                            if hasattr(frontend_ip, 'public_ip_address') and frontend_ip.public_ip_address:
+                                public_ip_id = frontend_ip.public_ip_address.id
+                                public_ip_name = self._extract_resource_name_from_id(public_ip_id)
+
+                                for public_ip in public_ips:
+                                    if public_ip.name == public_ip_name:
+                                        app_gw.add_dependency(public_ip.name, DependencyType.EXPLICIT, "Azure API - Application Gateway public IP")
+                                        logger.debug(f"Added public IP dependency: {app_gw.name} -> {public_ip.name}")
+                                        break
+
+                    # Extract subnet relationships from gateway IP configurations
+                    if hasattr(app_gw_details, 'gateway_ip_configurations') and app_gw_details.gateway_ip_configurations:
+                        for gateway_ip_config in app_gw_details.gateway_ip_configurations:
+                            if hasattr(gateway_ip_config, 'subnet') and gateway_ip_config.subnet:
+                                subnet_id = gateway_ip_config.subnet.id
+                                subnet_name = self._extract_resource_name_from_id(subnet_id)
+
+                                for subnet in subnets:
+                                    if subnet.name == subnet_name:
+                                        app_gw.add_dependency(subnet.name, DependencyType.EXPLICIT, "Azure API - Application Gateway subnet placement")
+                                        logger.debug(f"Added subnet dependency: {app_gw.name} -> {subnet.name}")
+                                        break
+
+                    # Set application gateway properties for better visualization
+                    if app_gw.dependencies:
+                        app_gw.properties['has_dependencies'] = True
+                        app_gw.properties['dependency_count'] = len(app_gw.dependencies)
+                        logger.info(f"Application Gateway {app_gw.name} now has {len(app_gw.dependencies)} dependencies")
+
+                except Exception as e:
+                    logger.warning(f"Could not analyze Application Gateway '{app_gw.name}': {e}")
+                    continue
+
+        except Exception as e:
+            logger.warning(f"Failed to discover Application Gateway relationships: {e}")
+
+    def _discover_vm_extension_relationships(self, resources: List[AzureResource]):
+        """Discover VM extension relationships to their parent VMs.
+
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find VM extensions
+        vm_extensions = [r for r in resources if r.resource_type == 'Microsoft.Compute/virtualMachines/extensions']
+
+        if not vm_extensions:
+            return
+
+        # Find VMs
+        vms = [r for r in resources if r.resource_type == 'Microsoft.Compute/virtualMachines']
+
+        try:
+            for vm_ext in vm_extensions:
+                try:
+                    logger.info(f"Discovering dependencies for VM extension: {vm_ext.name}")
+
+                    # VM extension name format is typically: vm-name/extension-name
+                    if '/' in vm_ext.name:
+                        vm_name = vm_ext.name.split('/')[0]
+
+                        # Find the parent VM
+                        for vm in vms:
+                            if vm.name == vm_name:
+                                vm_ext.add_dependency(vm.name, DependencyType.EXPLICIT, "Azure API - VM extension parent VM")
+                                logger.debug(f"Added VM dependency: {vm_ext.name} -> {vm.name}")
+                                break
+
+                    # Set extension properties for better visualization
+                    if vm_ext.dependencies:
+                        vm_ext.properties['has_dependencies'] = True
+                        vm_ext.properties['dependency_count'] = len(vm_ext.dependencies)
+                        logger.info(f"VM extension {vm_ext.name} now has {len(vm_ext.dependencies)} dependencies")
+
+                except Exception as e:
+                    logger.warning(f"Could not analyze VM extension '{vm_ext.name}': {e}")
+                    continue
+
+        except Exception as e:
+            logger.warning(f"Failed to discover VM extension relationships: {e}")
+
     def _extract_resource_name_from_id(self, resource_id: str) -> str:
         """Extract resource name from Azure resource ID.
         
@@ -1439,7 +1719,26 @@ class AzureClient:
             return parts[-1]  # Last part is the resource name
         
         return resource_id
-    
+
+    def _extract_resource_group_name_from_id(self, resource_group_id: str) -> str:
+        """Extract resource group name from Azure resource group ID.
+
+        Args:
+            resource_group_id: Azure resource group ID.
+
+        Returns:
+            Resource group name.
+        """
+        if not resource_group_id:
+            return ""
+
+        # Azure resource group ID format: /subscriptions/{sub}/resourceGroups/{rg}
+        parts = resource_group_id.split('/')
+        if len(parts) >= 5 and parts[1] == 'subscriptions' and parts[3] == 'resourceGroups':
+            return parts[4]  # Resource group name is the 5th part (index 4)
+
+        return ""
+
     def _get_api_version_for_resource_type(self, resource_type: str) -> str:
         """Get the appropriate API version for a given resource type.
         
@@ -1689,6 +1988,25 @@ class AzureClient:
                     for conn in resource.properties['external_pls_connections']:
                         external_resource_ids.add(conn['id'])
                         logger.info(f"Found external PLS dependency: {resource.name} -> {conn['name']} (RG: {conn['resource_group']})")
+
+                # Check for Solutions application managed resources
+                if (resource.resource_type == 'Microsoft.Solutions/applications' and
+                    'managed_resource_group' in resource.properties):
+                    managed_rg = resource.properties['managed_resource_group']
+                    logger.info(f"Processing managed resources for Solutions app {resource.name}: managed RG {managed_rg}")
+
+                    # Get all managed resources and add them as external dependencies
+                    try:
+                        managed_resources = self.resource_client.resources.list_by_resource_group(
+                            resource_group_name=managed_rg
+                        )
+
+                        for managed_res in managed_resources:
+                            external_resource_ids.add(managed_res.id)
+                            logger.info(f"Found managed resource dependency: {resource.name} -> {managed_res.name} (RG: {managed_rg})")
+
+                    except Exception as e:
+                        logger.warning(f"Could not list managed resources for Solutions app {resource.name}: {e}")
             
             logger.info(f"Total external resource IDs to process: {len(external_resource_ids)}")
             
@@ -1704,7 +2022,7 @@ class AzureClient:
                         if 'external_pls_connections' in resource.properties:
                             for conn in resource.properties['external_pls_connections']:
                                 if conn['id'] == resource_id:
-                                    resource.dependencies.append(external_resource.name)
+                                    resource.add_dependency(external_resource.name, DependencyType.EXPLICIT, "Azure API - cross-resource group connection")
                                     logger.debug(f"Added dependency: {resource.name} -> {external_resource.name}")
                 else:
                     # External resource fetch failed, check if it's a cross-tenant issue and create placeholder
@@ -1722,7 +2040,7 @@ class AzureClient:
                             if 'external_pls_connections' in resource.properties:
                                 for conn in resource.properties['external_pls_connections']:
                                     if conn['id'] == resource_id:
-                                        resource.dependencies.append(placeholder_resource.name)
+                                        resource.add_dependency(placeholder_resource.name, DependencyType.EXPLICIT, "Azure API - cross-resource group connection (placeholder)")
                                         logger.info(f"Added dependency to placeholder: {resource.name} -> {placeholder_resource.name}")
                     else:
                         logger.warning(f"Failed to create placeholder for {resource_id}")
@@ -1916,7 +2234,8 @@ class AzureClient:
             cluster_resource_id = f"/subscriptions/{self.subscription_id}/resourceGroups/{cluster.resource_group}/providers/Microsoft.RedHatOpenShift/OpenShiftClusters/{cluster.name}"
             
             result = subprocess.run([
-                'az', 'resource', 'show', 
+                'az', 'resource', 'show',
+                '--subscription', self.subscription_id,
                 '--ids', cluster_resource_id,
                 '--query', 'properties',
                 '-o', 'json'

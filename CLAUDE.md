@@ -36,6 +36,13 @@ python-azviz export --format html --output topology.html
 # Using subscription by name or ID
 python-azviz export --subscription "My Production Subscription"
 python-azviz export --subscription "12345678-1234-1234-1234-123456789012"
+
+# Verbose output (shows Graphviz warnings and debug info)
+python-azviz export --verbose --resource-group my-rg
+python-azviz export -v --resource-group my-rg
+
+# Normal mode (suppresses Graphviz warnings for cleaner output)
+python-azviz export --resource-group my-rg
 ```
 
 ### Code Quality Tools
@@ -76,8 +83,8 @@ pytest --cov=azviz tests/
 
 3. **Visualization Pipeline**:
    - **GraphBuilder** (`src/azviz/visualization/graph_builder.py`) - Creates NetworkX graph from Azure resources
-   - **DOTGenerator** (`src/azviz/visualization/dot_generator.py`) - Converts graph to Graphviz DOT format
-   - **GraphRenderer** (`src/azviz/visualization/renderer.py`) - Renders DOT to PNG/SVG/HTML using Graphviz
+   - **DOTGenerator** (`src/azviz/visualization/dot_generator.py`) - Converts graph to Graphviz DOT format with optimized canvas sizing
+   - **GraphRenderer** (`src/azviz/visualization/renderer.py`) - Renders DOT to PNG/SVG/HTML using Graphviz with configurable warning suppression
 
 4. **Data Models** (`src/azviz/core/models.py`)
    - Defines enums for themes, formats, directions

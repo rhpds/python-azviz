@@ -35,6 +35,7 @@ class IconManager:
             "microsoft.compute/snapshots": "DiskSnapshots.png",
             "microsoft.compute/images": "VMImages.png",
             "microsoft.compute/sshpublickeys": "keyvaults.png",  # SSH public keys use key vault icon
+            "microsoft.compute/virtualmachines/extensions": "extensions.png",  # VM extensions
             "microsoft.compute/galleries": "VMImages.png",  # Compute galleries for image management
             "microsoft.compute/galleries/images": "VMImages.png",  # Gallery image definitions
             "microsoft.compute/galleries/images/versions": "VMImages.png",  # Gallery image versions
@@ -46,6 +47,7 @@ class IconManager:
             "microsoft.network/virtualnetworkgateways": "virtualnetworkgateways.png",
             "microsoft.network/loadbalancers": "LoadBalancers.png",
             "microsoft.network/applicationgateways": "ApplicationGateway.png",
+            "microsoft.network/applicationgatewaywebapplicationfirewallpolicies": "ApplicationGateway.png",  # WAF policies for Application Gateway
             "microsoft.network/networksecuritygroups": "networksecuritygroups.png",
             "microsoft.network/publicipaddresses": "publicip.png",
             "microsoft.network/routetables": "routetables.png",
@@ -69,6 +71,7 @@ class IconManager:
             "microsoft.sql/servers": "sqlservers.png",
             "microsoft.documentdb/databaseaccounts": "cosmosdb.png",
             "microsoft.cache/redis": "redis.png",
+            "microsoft.dbforpostgresql/flexibleservers": "sqlservers.png",  # PostgreSQL flexible servers
             
             # Container Services
             "microsoft.containerregistry/registries": "ContainerRegistries.png",
@@ -91,6 +94,7 @@ class IconManager:
             "microsoft.automation/automationaccounts": "automation.png",
             "microsoft.resources/resourcegroups": "ResourceGroups.png",
             "microsoft.resources/subscriptions": "Subscriptions.png",
+            "microsoft.resources/deploymentscripts": "automation.png",  # Deployment Scripts for automation tasks
             
             # Web Services
             "microsoft.web/serverfarms": "appservices.png",
@@ -98,12 +102,16 @@ class IconManager:
             
             # Monitoring and Diagnostics
             "microsoft.insights/components": "applicationinsights.png",
+            "microsoft.operationsmanagement/solutions": "LogAnalyticsWorkspaces.png",  # Operations Management solutions like Container Insights
             
             # Integration Services
             "microsoft.web/connections": "APIConnections.png",
             "microsoft.media/mediaservices": "mediaservices.png",
             "microsoft.appconfiguration/configurationstores": "appconfiguration.png",
-            
+
+            # Solution Services
+            "microsoft.solutions/applications": "solutions.png",
+
             # Identity Services
             "microsoft.managedidentity/userassignedidentities": "managedidentities.png",
         }

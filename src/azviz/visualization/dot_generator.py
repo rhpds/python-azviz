@@ -78,9 +78,9 @@ class DOTGenerator:
         # Generate subscription title
         subscription_title = self._generate_subscription_title(subscription_name, subscription_id)
         
-        # Generate subgraphs
-        subgraph_content = self._generate_subgraphs(graph, subgraphs)
-        
+        # Generate subgraphs wrapped in a master container
+        subgraph_content = self._generate_subgraphs_with_container(graph, subgraphs)
+
         # Generate standalone nodes (not in subgraphs)
         standalone_nodes = self._generate_standalone_nodes(graph, subgraphs)
         
@@ -125,7 +125,7 @@ class DOTGenerator:
         # Use left-to-right for resource group arrangement, vertical stacking handled by invisible edges
         rankdir = 'LR'  # Keep RGs horizontal, use invisible edges for vertical stacking within RGs
         splines = self.config.splines.value
-        
+
         return f'''    // Graph attributes
     rankdir="{rankdir}";
     splines="{splines}";
@@ -139,7 +139,11 @@ class DOTGenerator:
     esep="+25";
     sep="+20";
     nodesep="1.0";
-    ranksep="1.5";'''
+    ranksep="1.5";
+    size="12,10!";
+    ratio="compress";
+    pack="true";
+    packmode="clust";'''
     
     def _generate_node_defaults(self) -> str:
         """Generate default node attributes."""
@@ -249,7 +253,63 @@ class DOTGenerator:
             subgraph_content.append('\n'.join(content))
         
         return '\n'.join(subgraph_content)
-    
+
+    def _generate_subgraphs_with_container(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
+        """Generate subgraphs wrapped in a master container for size constraint.
+
+        Args:
+            graph: NetworkX directed graph.
+            subgraphs: Dictionary of subgraph definitions.
+
+        Returns:
+            DOT subgraph definitions wrapped in a master container.
+        """
+        if not subgraphs:
+            return ""
+
+        container_content = [
+            '    subgraph cluster_main {',
+            '        label="Azure Resources";',
+            '        style="dashed";',  # Dashed border container for layout constraint
+            '        color="gray";',
+            '        margin="20";',
+            ''
+        ]
+
+        # Generate all the resource group subgraphs inside the container
+        for subgraph_name, subgraph_data in subgraphs.items():
+            nodes = subgraph_data['nodes']
+            label = subgraph_data.get('label', subgraph_name)
+            style = subgraph_data.get('style', 'filled')
+            fillcolor = subgraph_data.get('fillcolor', 'lightgray')
+
+            # Remove "cluster_" prefix if already present to avoid double prefixes
+            clean_subgraph_name = subgraph_name.replace("cluster_", "")
+
+            container_content.extend([
+                f'        subgraph "cluster_{clean_subgraph_name}" {{',
+                f'            label="{label}";',
+                f'            style="{style}";',
+                f'            fillcolor="{fillcolor}";',
+                f'            fontcolor="{self.theme.font_color}";',
+                '            rankdir="TB";',
+                '            margin="10";',
+                ''
+            ])
+
+            # Add nodes in this subgraph
+            for node_id in nodes:
+                if node_id in graph.nodes:
+                    node_data = graph.nodes[node_id]
+                    node_def = self._format_node(node_id, node_data)
+                    container_content.append(f'            {node_def}')
+
+            container_content.extend(['        }', ''])
+
+        container_content.append('    }')
+
+        return '\n'.join(container_content)
+
     def _generate_standalone_nodes(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
         """Generate nodes that are not part of any subgraph.
         
@@ -386,22 +446,19 @@ class DOTGenerator:
                         type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">CIDR:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_prefix}</FONT></TD></TR>')
             
             type_display = ''.join(type_display_parts)
-            
-            # Create HTML table label similar to PowerShell version
-            html_label = f'<<TABLE border="0" cellborder="0" cellpadding="0"><TR><TD ALIGN="center" colspan="2"><img src="{icon_path}"/></TD></TR><TR><TD align="center" colspan="2"><B><FONT POINT-SIZE="11">{escaped_name}</FONT></B></TD></TR>{type_display}</TABLE>>'
-            
+
             # Use appropriate background color based on theme and cross-tenant status
             is_cross_tenant = str(node_data.get('prop_is_cross_tenant', '')).lower() == 'true'
             is_placeholder = str(node_data.get('prop_is_placeholder', '')).lower() == 'true'
-            
+
             if is_cross_tenant and is_placeholder:
-                # Special styling for cross-tenant placeholders
+                # Special styling for cross-tenant placeholders - subtle but visible colors
                 node_fillcolor = "#ffe6e6" if self.config.theme == Theme.LIGHT else "#4d1a1a"  # Light red/dark red
                 penwidth = "2"
                 style = "dashed"
                 border_color = "red"
             elif is_placeholder:
-                # General external placeholder styling
+                # General external placeholder styling - subtle but visible colors
                 node_fillcolor = "#fff2e6" if self.config.theme == Theme.LIGHT else "#4d2d1a"  # Light orange/dark orange
                 penwidth = "2"
                 style = "dotted"
@@ -412,6 +469,9 @@ class DOTGenerator:
                 penwidth = "1"
                 style = "filled"
                 border_color = self.theme.edge_color
+
+            # Create HTML table label with background color applied to the TABLE element
+            html_label = f'<<TABLE border="0" cellborder="0" cellpadding="0" BGCOLOR="{node_fillcolor}"><TR><TD ALIGN="center" colspan="2"><img src="{icon_path}"/></TD></TR><TR><TD align="center" colspan="2"><B><FONT POINT-SIZE="11">{escaped_name}</FONT></B></TD></TR>{type_display}</TABLE>>'
             
             # For HTML table labels, we need to use a different approach to show borders
             # Use shape="box" with HTML label for better border control

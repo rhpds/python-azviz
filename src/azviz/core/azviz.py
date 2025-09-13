@@ -53,12 +53,13 @@ class AzViz:
         exclude_types: Optional[Set[str]] = None,
         show_legends: bool = True,
         show_power_state: bool = True,
-        save_dot: bool = False
+        save_dot: bool = False,
+        verbose: bool = False
     ) -> Path:
         """Export Azure resource topology diagram.
-        
+
         Args:
-            resource_group: Resource group name(s) to visualize. If empty list or None, 
+            resource_group: Resource group name(s) to visualize. If empty list or None,
                           visualizes all resource groups in subscription.
             output_file: Output file path.
             theme: Visual theme (light, dark, neon).
@@ -71,7 +72,8 @@ class AzViz:
             show_legends: Whether to include legend.
             show_power_state: Whether to show VM power state visualization.
             save_dot: Whether to save DOT source file.
-            
+            verbose: Whether to show verbose output including Graphviz warnings.
+
         Returns:
             Path to generated diagram file.
         """
@@ -156,7 +158,7 @@ class AzViz:
         # Save DOT file if requested
         if save_dot:
             dot_file = Path(output_file).with_suffix('.dot')
-            renderer = GraphRenderer()
+            renderer = GraphRenderer(verbose=verbose)
             renderer.save_dot_file(dot_content, str(dot_file))
             logger.info(f"DOT file saved: {dot_file}")
         
@@ -187,7 +189,7 @@ class AzViz:
             final_output_file = output_file
         
         # Render diagram
-        renderer = GraphRenderer()
+        renderer = GraphRenderer(verbose=verbose)
         output_path = renderer.render(dot_content, final_output_file, output_format)
         
         logger.info(f"Diagram exported successfully: {output_path}")
@@ -225,7 +227,7 @@ class AzViz:
         
         # Check Graphviz installation
         try:
-            renderer = GraphRenderer()
+            renderer = GraphRenderer(verbose=False)
             results['graphviz'] = True
         except RuntimeError:
             results['graphviz'] = False

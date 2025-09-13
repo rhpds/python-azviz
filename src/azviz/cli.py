@@ -194,7 +194,8 @@ def export(
             exclude_types=exclude_set,
             show_legends=legend,
             show_power_state=not no_power_state,
-            save_dot=save_dot
+            save_dot=save_dot,
+            verbose=verbose_mode
         )
         
         console.print(f"{output_path}", style="green")
