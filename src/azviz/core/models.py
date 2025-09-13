@@ -172,4 +172,5 @@ class VisualizationConfig(BaseModel):
     exclude_types: Set[str] = field(default_factory=set)
     show_legends: bool = True
     show_power_state: bool = True
+    compute_only: bool = False
     output_file: Optional[str] = None

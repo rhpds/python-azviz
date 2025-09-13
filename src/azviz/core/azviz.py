@@ -53,6 +53,7 @@ class AzViz:
         exclude_types: Optional[Set[str]] = None,
         show_legends: bool = True,
         show_power_state: bool = True,
+        compute_only: bool = False,
         save_dot: bool = False,
         verbose: bool = False
     ) -> Path:
@@ -71,6 +72,7 @@ class AzViz:
             exclude_types: Resource types to exclude (supports wildcards).
             show_legends: Whether to include legend.
             show_power_state: Whether to show VM power state visualization.
+            compute_only: Whether to show only compute resources and their directly related resources.
             save_dot: Whether to save DOT source file.
             verbose: Whether to show verbose output including Graphviz warnings.
 
@@ -103,6 +105,7 @@ class AzViz:
             exclude_types=exclude_types or set(),
             show_legends=show_legends,
             show_power_state=show_power_state,
+            compute_only=compute_only,
             output_file=output_file
         )
         

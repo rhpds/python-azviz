@@ -89,8 +89,9 @@ def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]):
               help='Resource types to exclude (supports wildcards). Can be specified multiple times.')
 @click.option('--legend', is_flag=True, help='Enable legend in output (disabled by default)')
 @click.option('--no-power-state', is_flag=True, help='Disable VM power state visualization (enabled by default)')
+@click.option('--compute-only', is_flag=True, help='Show only compute resources and their directly related resources (VMs, disks, SSH keys, etc.)')
 @click.option('--save-dot', is_flag=True, help='Save DOT source file alongside output')
-@click.option('--subscription', '-s', 
+@click.option('--subscription', '-s',
               help='Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.')
 @click.pass_context
 def export(
@@ -106,6 +107,7 @@ def export(
     exclude: tuple,
     legend: bool,
     no_power_state: bool,
+    compute_only: bool,
     save_dot: bool,
     subscription: Optional[str]
 ):
@@ -122,6 +124,7 @@ def export(
       python-azviz export --exclude "*.subnets" --output all-topology.png
       python-azviz export -g my-rg --format html --output topology.html  # Interactive HTML output
       python-azviz export -g my-rg --no-power-state       # Disable VM power state display
+      python-azviz export -g my-rg --compute-only         # Show only compute resources and dependencies
       python-azviz export -g my-rg --subscription "12345678-1234-1234-1234-123456789012"
       python-azviz export -g my-rg --subscription "My Production Subscription"
     """
@@ -194,6 +197,7 @@ def export(
             exclude_types=exclude_set,
             show_legends=legend,
             show_power_state=not no_power_state,
+            compute_only=compute_only,
             save_dot=save_dot,
             verbose=verbose_mode
         )

@@ -75,30 +75,142 @@ class GraphBuilder:
         return self.graph
     
     def _filter_resources(self, resources: List[AzureResource]) -> List[AzureResource]:
-        """Filter resources based on exclusion patterns.
-        
+        """Filter resources based on exclusion patterns and compute-only mode.
+
         Args:
             resources: List of Azure resources.
-            
+
         Returns:
             Filtered list of resources.
         """
-        if not self.config.exclude_types:
-            return resources
-        
-        filtered = []
-        for resource in resources:
-            excluded = False
-            for exclude_pattern in self.config.exclude_types:
-                if self._matches_pattern(resource.resource_type, exclude_pattern):
-                    excluded = True
-                    break
-            
-            if not excluded:
-                filtered.append(resource)
-        
-        logger.info(f"Filtered {len(resources)} resources to {len(filtered)} after exclusions")
+        # First apply compute-only filtering if enabled
+        if self.config.compute_only:
+            filtered = self._filter_compute_only(resources)
+        else:
+            filtered = resources
+
+        # Then apply exclusion patterns
+        if self.config.exclude_types:
+            final_filtered = []
+            for resource in filtered:
+                excluded = False
+                for exclude_pattern in self.config.exclude_types:
+                    if self._matches_pattern(resource.resource_type, exclude_pattern):
+                        excluded = True
+                        break
+
+                if not excluded:
+                    final_filtered.append(resource)
+            filtered = final_filtered
+
+        logger.info(f"Filtered {len(resources)} resources to {len(filtered)} after filtering")
         return filtered
+
+    def _filter_compute_only(self, resources: List[AzureResource]) -> List[AzureResource]:
+        """Filter to show only compute resources and their directly related resources.
+
+        Args:
+            resources: List of Azure resources.
+
+        Returns:
+            Filtered list of compute and related resources.
+        """
+        logger.info("Applying compute-only filter")
+
+        # Define compute resource types
+        compute_resource_types = {
+            'microsoft.compute/virtualmachines',
+            'microsoft.compute/virtualmachinescalesets',
+            'microsoft.compute/disks',
+            'microsoft.compute/snapshots',
+            'microsoft.compute/sshpublickeys',
+            'microsoft.compute/galleries',
+            'microsoft.compute/galleries/images',
+            'microsoft.compute/galleries/images/versions',
+            'microsoft.containerservice/managedclusters',  # AKS clusters
+            'microsoft.redhatopenshift/openshiftclusters'  # OpenShift clusters
+        }
+
+        # Define directly related resource types (networking, storage, identity needed for compute)
+        compute_related_types = {
+            'microsoft.network/networkinterfaces',
+            'microsoft.network/publicipaddresses',
+            'microsoft.network/virtualnetworks',
+            'microsoft.network/virtualnetworks/subnets',
+            'microsoft.network/networksecuritygroups',
+            'microsoft.network/loadbalancers',
+            'microsoft.storage/storageaccounts',
+            'microsoft.managedidentity/userassignedidentities'
+        }
+
+        # Collect compute resources
+        compute_resources = []
+        compute_resource_names = set()
+
+        for resource in resources:
+            if resource.resource_type.lower() in compute_resource_types:
+                compute_resources.append(resource)
+                compute_resource_names.add(resource.name)
+
+        if not compute_resources:
+            logger.warning("No compute resources found in resource groups")
+            return []
+
+        # Collect directly related resources
+        related_resources = []
+        related_resource_names = set()
+
+        # Get resources that compute resources depend on
+        for compute_resource in compute_resources:
+            for dependency in compute_resource.get_dependency_names():
+                for resource in resources:
+                    if (resource.name == dependency and
+                        resource.resource_type.lower() in compute_related_types and
+                        resource.name not in related_resource_names):
+                        related_resources.append(resource)
+                        related_resource_names.add(resource.name)
+
+        # Get resources that depend on compute resources (reverse lookup)
+        for resource in resources:
+            if (resource.resource_type.lower() in compute_related_types and
+                resource.name not in related_resource_names):
+
+                # Check if this resource depends on any compute resource
+                for dependency in resource.get_dependency_names():
+                    if dependency in compute_resource_names:
+                        related_resources.append(resource)
+                        related_resource_names.add(resource.name)
+                        break
+
+        # Also include network interfaces that are attached to compute resources
+        for resource in resources:
+            if (resource.resource_type.lower() == 'microsoft.network/networkinterfaces' and
+                resource.name not in related_resource_names):
+
+                # Check if any compute resource depends on this NIC
+                for compute_resource in compute_resources:
+                    for dependency in compute_resource.get_dependency_names():
+                        if dependency == resource.name:
+                            related_resources.append(resource)
+                            related_resource_names.add(resource.name)
+                            break
+
+        # Include VNets and subnets that contain the related network interfaces
+        for nic in related_resources:
+            if nic.resource_type.lower() == 'microsoft.network/networkinterfaces':
+                for dependency in nic.get_dependency_names():
+                    for resource in resources:
+                        if (resource.name == dependency and
+                            resource.resource_type.lower() in {'microsoft.network/virtualnetworks', 'microsoft.network/virtualnetworks/subnets'} and
+                            resource.name not in related_resource_names):
+                            related_resources.append(resource)
+                            related_resource_names.add(resource.name)
+
+        # Combine compute and related resources
+        filtered_resources = compute_resources + related_resources
+
+        logger.info(f"Compute-only filter: found {len(compute_resources)} compute resources and {len(related_resources)} related resources")
+        return filtered_resources
     
     def _matches_pattern(self, resource_type: str, pattern: str) -> bool:
         """Check if resource type matches exclusion pattern.

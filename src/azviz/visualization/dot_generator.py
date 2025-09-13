@@ -133,6 +133,7 @@ class DOTGenerator:
     fontname="{self.theme.font_name}";
     fontsize="{self.theme.font_size}";
     fontcolor="{self.theme.font_color}";
+    dpi="300";
     concentrate=false;
     compound=true;
     newrank=true;

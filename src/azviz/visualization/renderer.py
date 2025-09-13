@@ -84,6 +84,7 @@ class GraphRenderer:
             with context_manager:
                 # Render to specified format
                 if output_format == OutputFormat.PNG:
+                    # Use direct format specification for high-quality PNG
                     graph.render(
                         filename=output_path.stem,
                         directory=output_path.parent,
