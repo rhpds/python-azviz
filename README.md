@@ -25,6 +25,21 @@ Python AzViz generates visual diagrams of Azure Resource Groups and their depend
 - **Private Link Support**: Visualizes Private Endpoints and Private Link Services
 - **Cross-Resource Group**: Discovers dependencies across resource groups
 - **Storage Account Relationships**: Connects VMs to storage accounts and diagnostics
+- **Compute-Only View**: Focus on compute resources and their direct dependencies
+
+## Example Output
+
+### Full Topology View
+Shows all Azure resources and their relationships across the subscription:
+
+![Full Azure Topology](examples/azure-topology-full.png)
+
+### Compute-Only View
+Focuses on compute resources (VMs, disks, clusters) and their directly related infrastructure:
+
+![Compute-Only Azure Topology](examples/azure-topology-compute-only.png)
+
+The compute-only view filters 49 resources down to 21 focused on compute infrastructure, making it easier to understand VM deployments, storage attachments, and networking dependencies.
 
 ## Installation
 
@@ -120,6 +135,10 @@ python-azviz export --subscription "My Production Subscription" --output prod.pn
 # Using subscription by ID
 python-azviz export --subscription "12345678-1234-1234-1234-123456789012" --output prod.png
 
+# Focus on compute resources only
+python-azviz export --compute-only --output compute-topology.png
+python-azviz export --resource-group my-rg --compute-only --output my-compute.png
+
 # Verbose output for debugging (shows Graphviz warnings)
 python-azviz export --verbose --resource-group my-rg --output diagram.png
 python-azviz export -v --resource-group my-rg --output diagram.png
@@ -156,6 +175,13 @@ Python AzViz supports multiple authentication methods:
 - `png`: Portable Network Graphics
 - `svg`: Scalable Vector Graphics
 - `html`: Interactive HTML with zoom, pan, and drag capabilities
+
+### Filtering Options
+- **Compute-Only**: `--compute-only` focuses on compute resources and their direct dependencies
+  - Includes: VMs, disks, SSH keys, galleries, AKS/OpenShift clusters
+  - Related: Network interfaces, VNets, subnets, NSGs, load balancers, storage accounts, managed identities
+  - Perfect for understanding compute infrastructure deployments
+- **Exclude Types**: `--exclude "*.subnets"` to exclude specific resource types
 
 ### Verbose Output
 - **Normal mode**: Clean output with Graphviz warnings suppressed

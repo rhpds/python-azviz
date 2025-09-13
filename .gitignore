@@ -169,6 +169,10 @@ cython_debug/
 *.svg
 *.dot
 
+# Exception: Keep example diagrams for documentation
+!examples/*.png
+!examples/*.svg
+
 # Temporary files
 *.tmp
 *.temp
