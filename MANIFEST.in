@@ -1,0 +1,14 @@
+include README.md
+include LICENSE
+include requirements.txt
+include CLAUDE.md
+recursive-include src/azviz/icons *.png *.svg *.jpg *.jpeg
+recursive-include src/azviz *.py
+exclude *.pyc
+exclude __pycache__/*
+exclude .git/*
+exclude .github/*
+exclude tests/*
+exclude examples/*
+global-exclude *.pyc
+global-exclude __pycache__/*

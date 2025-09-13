@@ -17,6 +17,7 @@ class OutputFormat(str, Enum):
     """Supported output formats."""
     PNG = "png"
     SVG = "svg"
+    HTML = "html"
 
 
 class LabelVerbosity(int, Enum):
@@ -102,12 +103,26 @@ class ThemeConfig:
 class ResourceRanking:
     """Resource ranking for layout priority."""
     RANKINGS = {
-        "microsoft.network/publicipaddresses": 1,
-        "microsoft.network/loadbalancers": 2,
-        "microsoft.network/virtualnetworks": 3,
-        "microsoft.network/networksecuritygroups": 4,
-        "microsoft.network/networkinterfaces": 5,
-        "microsoft.compute/virtualmachines": 6,
+        "microsoft.network/dnszones": 1,  # DNS zones at top - provide naming for entire infrastructure
+        "microsoft.network/privatednszones": 1,  # Private DNS zones at same level as public DNS
+        "microsoft.network/publicipaddresses": 2,
+        "microsoft.network/loadbalancers": 3,
+        "microsoft.redhatopenshift/openshiftclusters": 4,  # OpenShift clusters at high priority
+        "microsoft.containerservice/managedclusters": 4,  # AKS clusters at same level
+        "microsoft.network/virtualnetworks": 5,
+        "microsoft.network/privatednszones/virtualnetworklinks": 5,  # VNet links should be near VNets
+        "microsoft.network/routetables": 6,  # Route tables should be near networking components
+        "microsoft.network/networksecuritygroups": 6,
+        "microsoft.network/networkinterfaces": 7,
+        "microsoft.compute/sshpublickeys": 7,  # SSH keys should be close to compute resources
+        "microsoft.managedidentity/userassignedidentities": 7,  # Managed identities should be close to resources using them
+        "microsoft.compute/virtualmachines": 8,
+        "microsoft.compute/disks": 9,  # Disks should appear below VMs
+        "microsoft.compute/snapshots": 10,
+        "microsoft.compute/galleries": 11,  # Galleries for image management
+        "microsoft.compute/galleries/images": 12,  # Gallery images within galleries
+        "microsoft.compute/galleries/images/versions": 13,  # Image versions within images
+        "microsoft.storage/storageaccounts": 14,  # Storage accounts for data storage
     }
     
     @classmethod
@@ -127,4 +142,5 @@ class VisualizationConfig(BaseModel):
     splines: Splines = Splines.POLYLINE
     exclude_types: Set[str] = field(default_factory=set)
     show_legends: bool = True
+    show_power_state: bool = True
     output_file: Optional[str] = None

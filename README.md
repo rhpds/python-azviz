@@ -13,14 +13,18 @@ Python AzViz generates visual diagrams of Azure Resource Groups and their depend
 ## Features
 
 - **Azure Resource Discovery**: Automatically finds resources and dependencies
+- **Subscription Flexibility**: Support for both subscription IDs and names
 - **Network Topology Mapping**: Maps VNets, subnets, and network relationships
 - **VM Power State Visualization**: Shows running/stopped status with color coding
 - **Visual Themes**: Light, dark, and neon color schemes
 - **Multiple Formats**: PNG, SVG, and interactive HTML output support
 - **Flexible Filtering**: Include/exclude specific resource types
-- **Icon Integration**: 40+ Azure service icons for visual clarity
+- **Icon Integration**: 56+ Azure service icons for visual clarity
 - **Hybrid Layout**: Horizontal resource groups with vertical resource stacking
+- **Advanced Dependencies**: SSH keys, managed identities, gallery hierarchies, DNS zones
 - **Private Link Support**: Visualizes Private Endpoints and Private Link Services
+- **Cross-Resource Group**: Discovers dependencies across resource groups
+- **Storage Account Relationships**: Connects VMs to storage accounts and diagnostics
 
 ## Installation
 
@@ -109,9 +113,28 @@ python-azviz export --resource-group my-rg --format html --output diagram.html
 
 # Multiple resource groups
 python-azviz export -g rg1 -g rg2 -g rg3 --output multi-rg.png
+
+# Using subscription by name instead of ID
+python-azviz export --subscription "My Production Subscription" --output prod.png
+
+# Using subscription by ID
+python-azviz export --subscription "12345678-1234-1234-1234-123456789012" --output prod.png
+
+# List resource groups in specific subscription
+python-azviz list-rg --subscription "My Dev Subscription"
+
+# Preview resources before generating diagram
+python-azviz preview my-rg --subscription "My Test Subscription"
 ```
 
 ## Configuration
+
+### Subscription Selection
+Python AzViz supports flexible subscription targeting:
+- **By Name**: `--subscription "My Production Subscription"`
+- **By ID**: `--subscription "12345678-1234-1234-1234-123456789012"`
+- **Partial Matching**: `--subscription "Production"` (must be unique)
+- **Auto-detection**: Uses first available subscription if not specified
 
 ### Authentication
 Python AzViz supports multiple authentication methods:
@@ -129,6 +152,43 @@ Python AzViz supports multiple authentication methods:
 - `png`: Portable Network Graphics
 - `svg`: Scalable Vector Graphics
 - `html`: Interactive HTML with zoom, pan, and drag capabilities
+
+### Supported Azure Resources
+Python AzViz automatically discovers and visualizes these Azure resource types with proper relationships:
+
+**Compute**
+- Virtual Machines (with power state visualization)
+- Virtual Machine Scale Sets
+- SSH Public Keys
+- Azure Compute Galleries, Images, and Versions
+
+**Network**
+- Virtual Networks and Subnets
+- Network Interfaces
+- Public IP Addresses
+- Load Balancers
+- Network Security Groups
+- Route Tables
+- Private Endpoints
+- Private Link Services
+- DNS Zones (Public and Private)
+- Private DNS Zones and VNet Links
+
+**Storage**
+- Storage Accounts (with VM diagnostic relationships)
+- Managed Disks
+
+**Identity**
+- User-Assigned Managed Identities
+
+**Container**
+- Azure Red Hat OpenShift Clusters
+- Azure Kubernetes Service Clusters
+
+**Other**
+- Resource Groups (as containers)
+- Cross-resource group dependencies
+- Internet connectivity visualization
 
 ## Examples
 

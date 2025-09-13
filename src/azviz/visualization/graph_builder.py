@@ -174,7 +174,7 @@ class GraphBuilder:
             GraphNode representing the group.
         """
         resource_names = [r.name for r in resources]
-        label = self._build_node_label(group_key, resource_names, resources[0].category)
+        label = self._build_node_label(group_key, resource_names, resources[0].category, group_key)
         
         return GraphNode(
             id=f"group_{group_key.lower().replace('.', '_').replace('/', '_')}",
@@ -200,7 +200,7 @@ class GraphBuilder:
             GraphNode representing the resource.
         """
         node_id = f"{resource.category.lower()}_{resource.name.lower()}".replace(' ', '_').replace('-', '_').replace('.', '_')
-        label = self._build_node_label(resource.name, [resource.name], resource.category)
+        label = self._build_node_label(resource.name, [resource.name], resource.category, resource.resource_type)
         
         # Include power state for VMs if available
         attributes = {
@@ -236,17 +236,79 @@ class GraphBuilder:
             attributes=attributes
         )
     
-    def _build_node_label(self, name: str, resource_names: List[str], category: str) -> str:
+    def _build_node_label(self, name: str, resource_names: List[str], category: str, resource_type: str = None) -> str:
         """Build node label based on verbosity settings.
         
         Args:
             name: Primary name for the node.
             resource_names: List of resource names.
             category: Resource category.
+            resource_type: Optional resource type for specialized labeling.
             
         Returns:
             Formatted label string.
         """
+        # Special handling for SSH public keys
+        if resource_type and resource_type.lower() == 'microsoft.compute/sshpublickeys':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name}\\n(SSH Public Key)"
+            else:  # DETAILED
+                return f"{name}\\n(SSH Public Key)\\nAuthentication Credential"
+        
+        # Special handling for Azure Compute Gallery resources
+        elif resource_type and resource_type.lower() == 'microsoft.compute/galleries':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name}\\n(Compute Gallery)"
+            else:  # DETAILED
+                return f"{name}\\n(Compute Gallery)\\nImage Repository"
+        
+        elif resource_type and resource_type.lower() == 'microsoft.compute/galleries/images':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name.split('/')[-1]  # Show just the image name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name.split('/')[-1]}\\n(Gallery Image)"
+            else:  # DETAILED
+                return f"{name.split('/')[-1]}\\n(Gallery Image)\\nImage Definition"
+        
+        elif resource_type and resource_type.lower() == 'microsoft.compute/galleries/images/versions':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name.split('/')[-1]  # Show just the version
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"v{name.split('/')[-1]}\\n(Image Version)"
+            else:  # DETAILED
+                return f"v{name.split('/')[-1]}\\n(Image Version)\\nVersioned Image"
+        
+        # Special handling for Managed Identity resources
+        elif resource_type and resource_type.lower() == 'microsoft.managedidentity/userassignedidentities':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name}\\n(Managed Identity)"
+            else:  # DETAILED
+                return f"{name}\\n(Managed Identity)\\nAuthentication Service"
+        
+        # Special handling for Private DNS Zone resources
+        elif resource_type and resource_type.lower() == 'microsoft.network/privatednszones':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name}\\n(Private DNS Zone)"
+            else:  # DETAILED
+                return f"{name}\\n(Private DNS Zone)\\nInternal DNS Resolution"
+        
+        elif resource_type and resource_type.lower() == 'microsoft.network/privatednszones/virtualnetworklinks':
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return name.split('/')[-1]  # Show just the link name
+            elif self.config.label_verbosity == LabelVerbosity.STANDARD:
+                return f"{name.split('/')[-1]}\\n(VNet Link)"
+            else:  # DETAILED
+                return f"{name.split('/')[-1]}\\n(VNet Link)\\nDNS-VNet Connection"
+        
+        # Standard labeling for other resources
         if self.config.label_verbosity == LabelVerbosity.MINIMAL:
             return name
         elif self.config.label_verbosity == LabelVerbosity.STANDARD:
@@ -459,6 +521,127 @@ class GraphBuilder:
                             'minlen': '1'   # Minimum length for closer positioning
                         }
                         label = 'uses storage'
+                    # For VM-SSH key dependencies, create a connection to show authentication
+                    elif (resource.resource_type == 'Microsoft.Compute/virtualMachines' and 
+                          dep_resource.resource_type == 'Microsoft.Compute/sshPublicKeys'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'gold',
+                            'penwidth': '2',
+                            'weight': '7',  # High weight for positioning close to VMs
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'authenticates'
+                    # For gallery hierarchy dependencies, create containment connections
+                    elif (resource.resource_type == 'Microsoft.Compute/galleries/images' and 
+                          dep_resource.resource_type == 'Microsoft.Compute/galleries'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'purple',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for hierarchical positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'contained in'
+                    elif (resource.resource_type == 'Microsoft.Compute/galleries/images/versions' and 
+                          dep_resource.resource_type == 'Microsoft.Compute/galleries/images'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'purple',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for hierarchical positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'version of'
+                    # For managed identity dependencies, create identity connections
+                    elif (resource.resource_type in [
+                        'Microsoft.Compute/virtualMachines',
+                        'Microsoft.Compute/virtualMachineScaleSets',
+                        'Microsoft.ContainerService/managedClusters',
+                        'Microsoft.RedHatOpenShift/OpenShiftClusters',
+                        'Microsoft.Web/sites'
+                    ] and dep_resource.resource_type == 'Microsoft.ManagedIdentity/userAssignedIdentities'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'teal',
+                            'penwidth': '2',
+                            'weight': '6',  # Medium-high weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses identity'
+                    # For Private DNS Zone dependencies, create DNS resolution connections
+                    elif (resource.resource_type == 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' and 
+                          dep_resource.resource_type == 'Microsoft.Network/privateDnsZones'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkgreen',
+                            'penwidth': '2',
+                            'weight': '8',  # High weight for hierarchical positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'links to'
+                    elif (resource.resource_type == 'Microsoft.Network/privateDnsZones/virtualNetworkLinks' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'darkgreen',
+                            'penwidth': '2',
+                            'weight': '7',  # High weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'connects to'
+                    elif (resource.resource_type == 'Microsoft.Network/privateDnsZones' and 
+                          dep_resource.resource_type == 'Microsoft.Network/virtualNetworks'):
+                        edge_attrs = {
+                            'style': 'dashed',
+                            'color': 'darkgreen',
+                            'penwidth': '2',
+                            'weight': '5',  # Medium weight for positioning
+                            'minlen': '2'   # Allow some distance for clarity
+                        }
+                        label = 'provides DNS for'
+                    # For route table dependencies, create routing control connections
+                    elif (resource.resource_type == 'Microsoft.Network/virtualNetworks/subnets' and 
+                          dep_resource.resource_type == 'Microsoft.Network/routeTables'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'orange',
+                            'penwidth': '2',
+                            'weight': '6',  # Medium-high weight for positioning
+                            'minlen': '1'   # Minimum length for closer positioning
+                        }
+                        label = 'uses routing'
+                    # For DNS zone dependencies, create DNS resolution connections
+                    elif (resource.resource_type == 'Microsoft.Network/dnszones' and 
+                          dep_resource.resource_type == 'Microsoft.Network/loadBalancers'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'navy',
+                            'penwidth': '2',
+                            'weight': '5',  # Medium weight for DNS connections
+                            'minlen': '2'   # Allow some distance for clarity
+                        }
+                        label = 'resolves to'
+                    elif (resource.resource_type == 'Microsoft.Network/dnszones' and 
+                          dep_resource.resource_type == 'Microsoft.Network/publicIPAddresses'):
+                        edge_attrs = {
+                            'style': 'solid',
+                            'color': 'navy',
+                            'penwidth': '2',
+                            'weight': '5',  # Medium weight for DNS connections
+                            'minlen': '2'   # Allow some distance for clarity
+                        }
+                        label = 'resolves to'
+                    elif (resource.resource_type == 'Microsoft.Network/dnszones' and 
+                          dep_resource.resource_type == 'Microsoft.Compute/virtualMachines'):
+                        edge_attrs = {
+                            'style': 'dashed',
+                            'color': 'navy',
+                            'penwidth': '2',
+                            'weight': '4',  # Lower weight for VM connections
+                            'minlen': '2'   # Allow some distance for clarity
+                        }
+                        label = 'serves API for'
                     else:
                         edge_attrs = {
                             'style': 'dashed',

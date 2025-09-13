@@ -1,6 +1,8 @@
 """Azure service icon management system."""
 
 import logging
+import base64
+import mimetypes
 from pathlib import Path
 from typing import Dict, Optional, Union
 
@@ -32,6 +34,10 @@ class IconManager:
             "microsoft.compute/disks": "Disks.png",
             "microsoft.compute/snapshots": "DiskSnapshots.png",
             "microsoft.compute/images": "VMImages.png",
+            "microsoft.compute/sshpublickeys": "keyvaults.png",  # SSH public keys use key vault icon
+            "microsoft.compute/galleries": "VMImages.png",  # Compute galleries for image management
+            "microsoft.compute/galleries/images": "VMImages.png",  # Gallery image definitions
+            "microsoft.compute/galleries/images/versions": "VMImages.png",  # Gallery image versions
             "microsoft.web/sites": "functions.png",
             "microsoft.servicefabric/clusters": "servicefabric.png",
             
@@ -49,8 +55,12 @@ class IconManager:
             "microsoft.network/networkinterfaces": "nic.png",
             "microsoft.network/networkwatchers": "NetworkWatcher.png",
             "microsoft.network/dnszones": "appservices.png",  # Use app services icon for DNS zones
+            "microsoft.network/privatednszones": "appservices.png",  # Private DNS zones for internal resolution
+            "microsoft.network/privatednszones/virtualnetworklinks": "Connections.png",  # VNet links for DNS connectivity
             "microsoft.network/privateendpoints": "Connections.png",  # Private endpoints for connectivity
             "microsoft.network/privatelinkservices": "Connections.png",  # Private Link services for connectivity
+            "microsoft.network/virtualnetworks/subnets": "virtualnetworks.png",  # Subnets use VNet icon
+            "internet/gateway": "FrontDoors.png",  # Internet uses Front Door icon
             
             # Storage Services
             "microsoft.storage/storageaccounts": "storageaccounts.png",
@@ -144,3 +154,40 @@ class IconManager:
         """
         self.icon_mappings[resource_type.lower()] = icon_filename
         logger.info(f"Added custom icon mapping: {resource_type} -> {icon_filename}")
+    
+    def get_icon_data_url(self, resource_type: str) -> Optional[str]:
+        """Get icon as base64 data URL for embedding in HTML.
+        
+        Args:
+            resource_type: Azure resource type (e.g., 'Microsoft.Compute/virtualMachines').
+            
+        Returns:
+            Base64 data URL string, or None if icon not found.
+        """
+        icon_path = self.get_icon_path(resource_type)
+        if not icon_path or not icon_path.exists():
+            return None
+        
+        try:
+            # Read the icon file as binary
+            with open(icon_path, 'rb') as icon_file:
+                icon_data = icon_file.read()
+            
+            # Get MIME type based on file extension
+            mime_type, _ = mimetypes.guess_type(str(icon_path))
+            if not mime_type:
+                # Default to PNG if we can't determine the type
+                mime_type = 'image/png'
+            
+            # Encode as base64
+            base64_data = base64.b64encode(icon_data).decode('utf-8')
+            
+            # Create data URL
+            data_url = f"data:{mime_type};base64,{base64_data}"
+            
+            logger.debug(f"Generated data URL for {resource_type}: {len(data_url)} characters")
+            return data_url
+            
+        except Exception as e:
+            logger.error(f"Failed to generate data URL for icon {icon_path}: {e}")
+            return None

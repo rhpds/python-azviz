@@ -35,11 +35,11 @@ def setup_logging(verbose: bool = False):
 
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
-@click.option('--subscription-id', '-s', 
-              help='Azure subscription ID. If not specified, uses the first available subscription from your Azure credentials.')
+@click.option('--subscription', '-s', 
+              help='Azure subscription ID or name. If not specified, uses the first available subscription from your Azure credentials.')
 @click.version_option()
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, subscription_id: Optional[str]):
+def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]):
     """Python AzViz - Azure resource topology visualization tool.
     
     Generate beautiful diagrams of your Azure infrastructure automatically.
@@ -48,7 +48,7 @@ def cli(ctx: click.Context, verbose: bool, subscription_id: Optional[str]):
     Authentication:
     - Uses Azure CLI credentials by default (az login)
     - Supports service principal and managed identity
-    - Use --subscription-id to target specific subscription
+    - Use --subscription to target specific subscription by ID or name
     
     \b
     Examples:
@@ -57,13 +57,14 @@ def cli(ctx: click.Context, verbose: bool, subscription_id: Optional[str]):
       python-azviz preview my-rg              # Preview specific RG
       python-azviz export                     # Diagram all resource groups
       python-azviz export -g my-rg --theme dark
-      python-azviz export -g rg1 -g rg2 --subscription-id "12345678-1234-1234-1234-123456789012"
+      python-azviz export -g rg1 -g rg2 --subscription "12345678-1234-1234-1234-123456789012"
+      python-azviz export -g rg1 -g rg2 --subscription "My Production Subscription"
     """
     setup_logging(verbose)
     
     # Store global options in context for commands to use
     ctx.ensure_object(dict)
-    ctx.obj['subscription_id'] = subscription_id
+    ctx.obj['subscription'] = subscription
     ctx.obj['verbose'] = verbose
 
 
@@ -71,10 +72,10 @@ def cli(ctx: click.Context, verbose: bool, subscription_id: Optional[str]):
 @click.option('--resource-group', '-g', multiple=True, required=False,
               help='Azure resource group name(s) to visualize. Can be specified multiple times. If not specified, visualizes all resource groups in subscription.')
 @click.option('--output', '-o', default='azure-topology.png',
-              help='Output file path (default: azure-topology.png)')
+              help='Output file path (default: azure-topology.png, will change extension based on format)')
 @click.option('--theme', '-t', type=click.Choice(['light', 'dark', 'neon']), default='light',
               help='Visual theme (default: light)')
-@click.option('--format', '-f', 'output_format', type=click.Choice(['png', 'svg']), default='png',
+@click.option('--format', '-f', 'output_format', type=click.Choice(['png', 'svg', 'html']), default='png',
               help='Output format (default: png)')
 @click.option('--verbosity', type=click.IntRange(1, 3), default=2,
               help='Label verbosity level: 1=minimal, 2=standard, 3=detailed (default: 2)')
@@ -87,9 +88,10 @@ def cli(ctx: click.Context, verbose: bool, subscription_id: Optional[str]):
 @click.option('--exclude', multiple=True,
               help='Resource types to exclude (supports wildcards). Can be specified multiple times.')
 @click.option('--legend', is_flag=True, help='Enable legend in output (disabled by default)')
+@click.option('--no-power-state', is_flag=True, help='Disable VM power state visualization (enabled by default)')
 @click.option('--save-dot', is_flag=True, help='Save DOT source file alongside output')
-@click.option('--subscription-id', '-s', 
-              help='Azure subscription ID. If not specified, uses the global --subscription-id or first available subscription.')
+@click.option('--subscription', '-s', 
+              help='Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.')
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -103,8 +105,9 @@ def export(
     splines: str,
     exclude: tuple,
     legend: bool,
+    no_power_state: bool,
     save_dot: bool,
-    subscription_id: Optional[str]
+    subscription: Optional[str]
 ):
     """Export Azure resource topology diagram.
     
@@ -117,17 +120,20 @@ def export(
       python-azviz export -g my-resource-group            # Specific resource group
       python-azviz export -g rg1 -g rg2 --theme dark     # Multiple resource groups
       python-azviz export --exclude "*.subnets" --output all-topology.png
-      python-azviz export -g my-rg --subscription-id "12345678-1234-1234-1234-123456789012"
+      python-azviz export -g my-rg --format html --output topology.html  # Interactive HTML output
+      python-azviz export -g my-rg --no-power-state       # Disable VM power state display
+      python-azviz export -g my-rg --subscription "12345678-1234-1234-1234-123456789012"
+      python-azviz export -g my-rg --subscription "My Production Subscription"
     """
     try:
-        # Use command-level subscription_id, fallback to global, then None
-        final_subscription_id = subscription_id or ctx.obj.get('subscription_id')
+        # Use command-level subscription, fallback to global, then None
+        final_subscription = subscription or ctx.obj.get('subscription')
         verbose_mode = ctx.obj.get('verbose', False)
         
         # Initialize AzViz
         if verbose_mode:
             console.print("🔄 Initializing Azure connection...", style="blue")
-        azviz = AzViz(subscription_id=final_subscription_id)
+        azviz = AzViz(subscription_identifier=final_subscription)
         
         # Validate prerequisites  
         prereqs = azviz.validate_prerequisites()
@@ -164,13 +170,21 @@ def export(
         splines_enum = Splines(splines)
         exclude_set: Set[str] = set(exclude) if exclude else set()
         
+        # Adjust output file extension based on format if default filename is used
+        output_file = output
+        if output == 'azure-topology.png':
+            if output_format == 'svg':
+                output_file = 'azure-topology.svg'
+            elif output_format == 'html':
+                output_file = 'azure-topology.html'
+        
         # Export diagram
         if verbose_mode:
             console.print(f"🎨 Generating diagram for {len(target_resource_groups)} resource group(s)...", style="green")
         
         output_path = azviz.export_diagram(
             resource_group=target_resource_groups,
-            output_file=output,
+            output_file=output_file,
             theme=theme_enum,
             output_format=format_enum,
             label_verbosity=verbosity_enum,
@@ -179,6 +193,7 @@ def export(
             splines=splines_enum,
             exclude_types=exclude_set,
             show_legends=legend,
+            show_power_state=not no_power_state,
             save_dot=save_dot
         )
         
@@ -192,25 +207,26 @@ def export(
 
 
 @cli.command('list-rg')
-@click.option('--subscription-id', '-s',
-              help='Azure subscription ID. If not specified, uses the global --subscription-id or first available subscription.')
+@click.option('--subscription', '-s',
+              help='Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.')
 @click.pass_context
-def list_resource_groups(ctx: click.Context, subscription_id: Optional[str]):
+def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
     """List available Azure resource groups in subscription.
     
     \b
     Examples:
       python-azviz list-rg
-      python-azviz list-rg --subscription-id "12345678-1234-1234-1234-123456789012"
+      python-azviz list-rg --subscription "12345678-1234-1234-1234-123456789012"
+      python-azviz list-rg --subscription "My Production Subscription"
     """
     try:
-        # Use command-level subscription_id, fallback to global, then None
-        final_subscription_id = subscription_id or ctx.obj.get('subscription_id')
+        # Use command-level subscription, fallback to global, then None
+        final_subscription = subscription or ctx.obj.get('subscription')
         verbose_mode = ctx.obj.get('verbose', False)
         
         if verbose_mode:
             console.print("🔄 Fetching resource groups...", style="blue")
-        azviz = AzViz(subscription_id=final_subscription_id)
+        azviz = AzViz(subscription_identifier=final_subscription)
         
         resource_groups = azviz.get_available_resource_groups()
         
@@ -245,10 +261,10 @@ def list_resource_groups(ctx: click.Context, subscription_id: Optional[str]):
 
 @cli.command('preview')
 @click.argument('resource_group', required=False)
-@click.option('--subscription-id', '-s',
-              help='Azure subscription ID. If not specified, uses the global --subscription-id or first available subscription.')
+@click.option('--subscription', '-s',
+              help='Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.')
 @click.pass_context  
-def preview_resources(ctx: click.Context, resource_group: Optional[str], subscription_id: Optional[str]):
+def preview_resources(ctx: click.Context, resource_group: Optional[str], subscription: Optional[str]):
     """Preview resources in a resource group or all resource groups if none specified.
     
     \b
@@ -257,11 +273,11 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
       python-azviz preview                      # Preview all RGs in subscription
     """
     try:
-        # Use command-level subscription_id, fallback to global, then None
-        final_subscription_id = subscription_id or ctx.obj.get('subscription_id')
+        # Use command-level subscription, fallback to global, then None
+        final_subscription = subscription or ctx.obj.get('subscription')
         verbose_mode = ctx.obj.get('verbose', False)
         
-        azviz = AzViz(subscription_id=final_subscription_id)
+        azviz = AzViz(subscription_identifier=final_subscription)
         
         if resource_group:
             # Preview specific resource group
@@ -344,10 +360,10 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
 
 
 @cli.command('validate')
-@click.option('--subscription-id', '-s',
-              help='Azure subscription ID. If not specified, uses the global --subscription-id or first available subscription.')
+@click.option('--subscription', '-s',
+              help='Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.')
 @click.pass_context
-def validate_prerequisites(ctx: click.Context, subscription_id: Optional[str]):
+def validate_prerequisites(ctx: click.Context, subscription: Optional[str]):
     """Validate prerequisites for diagram generation."""
     try:
         verbose_mode = ctx.obj.get('verbose', False)
@@ -357,9 +373,9 @@ def validate_prerequisites(ctx: click.Context, subscription_id: Optional[str]):
         
         # Test Azure connection
         try:
-            # Use command-level subscription_id, fallback to global, then None
-            final_subscription_id = subscription_id or ctx.obj.get('subscription_id')
-            azviz = AzViz(subscription_id=final_subscription_id)
+            # Use command-level subscription, fallback to global, then None
+            final_subscription = subscription or ctx.obj.get('subscription')
+            azviz = AzViz(subscription_identifier=final_subscription)
             prereqs = azviz.validate_prerequisites()
         except Exception as e:
             prereqs = {
@@ -441,7 +457,8 @@ def show_info():
     
     format_descriptions = {
         'png': 'Portable Network Graphics (raster)',
-        'svg': 'Scalable Vector Graphics (vector)'
+        'svg': 'Scalable Vector Graphics (vector)',
+        'html': 'Interactive HTML page with embedded diagram'
     }
     
     for fmt in OutputFormat:
@@ -474,6 +491,11 @@ def show_info():
         "depth", 
         "1, 2, 3", 
         "Resource categorization depth"
+    )
+    layout_table.add_row(
+        "--no-power-state", 
+        "flag", 
+        "Disable VM power state visualization (enabled by default)"
     )
     
     console.print(layout_table)

@@ -18,23 +18,21 @@ logger = logging.getLogger(__name__)
 class AzureClient:
     """Azure Management API client for resource discovery."""
     
-    def __init__(self, subscription_id: Optional[str] = None, credential: Optional[Any] = None):
+    def __init__(self, subscription_identifier: Optional[str] = None, credential: Optional[Any] = None):
         """Initialize Azure client.
         
         Args:
-            subscription_id: Azure subscription ID. If None, will use first available.
+            subscription_identifier: Azure subscription ID or name. If None, will use first available.
             credential: Azure credential object. If None, will use DefaultAzureCredential.
         """
         self.credential = credential or self._get_default_credential()
-        self.subscription_id = subscription_id
-        self.subscription_name = None
         
-        # Get subscription info if not provided
-        if not self.subscription_id:
+        # Resolve subscription identifier to ID and name
+        if not subscription_identifier:
             self.subscription_id, self.subscription_name = self._get_subscription_info()
         else:
-            # Get name for provided subscription ID
-            self.subscription_name = self._get_subscription_name(self.subscription_id)
+            # Resolve the identifier (could be name or ID) to ID and name
+            self.subscription_id, self.subscription_name = self._resolve_subscription_identifier(subscription_identifier)
         
         # Initialize management clients
         self.resource_client = ResourceManagementClient(
@@ -81,6 +79,60 @@ class AzureClient:
         except AzureError as e:
             logger.warning(f"Failed to get subscription name for {subscription_id}: {e}")
             return subscription_id  # Fallback to ID if name unavailable
+    
+    def _resolve_subscription_identifier(self, subscription_identifier: str) -> Tuple[str, str]:
+        """Resolve subscription identifier (name or ID) to ID and name.
+        
+        Args:
+            subscription_identifier: Subscription name or ID.
+            
+        Returns:
+            Tuple of (subscription_id, subscription_name).
+            
+        Raises:
+            ValueError: If subscription cannot be found or resolved.
+        """
+        try:
+            subscription_client = SubscriptionClient(self.credential)
+            subscriptions = list(subscription_client.subscriptions.list())
+            
+            if not subscriptions:
+                raise ValueError("No Azure subscriptions found")
+            
+            # Check if it's a valid subscription ID (UUID format)
+            import re
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+            
+            if uuid_pattern.match(subscription_identifier):
+                # It's likely a subscription ID, try to get it directly
+                for sub in subscriptions:
+                    if sub.subscription_id.lower() == subscription_identifier.lower():
+                        return sub.subscription_id, sub.display_name
+                raise ValueError(f"Subscription ID '{subscription_identifier}' not found")
+            else:
+                # It's likely a subscription name, search by display name
+                for sub in subscriptions:
+                    if sub.display_name.lower() == subscription_identifier.lower():
+                        return sub.subscription_id, sub.display_name
+                
+                # If exact match not found, try partial match
+                partial_matches = []
+                for sub in subscriptions:
+                    if subscription_identifier.lower() in sub.display_name.lower():
+                        partial_matches.append((sub.subscription_id, sub.display_name))
+                
+                if len(partial_matches) == 1:
+                    logger.info(f"Found partial match for subscription '{subscription_identifier}': {partial_matches[0][1]}")
+                    return partial_matches[0]
+                elif len(partial_matches) > 1:
+                    matches_str = ", ".join([f"'{match[1]}'" for match in partial_matches])
+                    raise ValueError(f"Multiple subscriptions match '{subscription_identifier}': {matches_str}. Please be more specific.")
+                else:
+                    available_subs = ", ".join([f"'{sub.display_name}'" for sub in subscriptions[:5]])  # Show first 5
+                    raise ValueError(f"Subscription '{subscription_identifier}' not found. Available subscriptions: {available_subs}")
+                    
+        except AzureError as e:
+            raise ValueError(f"Failed to resolve subscription '{subscription_identifier}': {e}") from e
     
     def test_authentication(self) -> bool:
         """Test Azure authentication and permissions.
@@ -153,6 +205,18 @@ class AzureClient:
             # Discover VM-disk relationships
             self._discover_vm_disk_relationships(resources)
             
+            # Discover VM-SSH public key relationships
+            self._discover_vm_ssh_key_relationships(resources)
+            
+            # Discover gallery hierarchy relationships
+            self._discover_gallery_relationships(resources)
+            
+            # Discover managed identity relationships
+            self._discover_managed_identity_relationships(resources)
+            
+            # Discover Private DNS Zone relationships
+            self._discover_private_dns_relationships(resources)
+            
             # Discover NIC-to-private endpoint relationships
             self._discover_nic_private_endpoint_relationships(resources)
             
@@ -161,6 +225,12 @@ class AzureClient:
             
             # Discover all subnets and create virtual subnet resources
             self._discover_all_subnets(resources)
+            
+            # Discover route table relationships (after subnets are discovered)
+            self._discover_route_table_relationships(resources)
+            
+            # Note: DNS zone relationships are discovered later in post-processing 
+            # to handle cross-resource-group relationships
             
             # Discover private endpoint-to-subnet relationships
             self._discover_private_endpoint_subnet_relationships(resources)
@@ -241,6 +311,406 @@ class AzureClient:
                     
         except Exception as e:
             logger.warning(f"Failed to discover VM-disk relationships: {e}")
+    
+    def _discover_vm_ssh_key_relationships(self, resources: List[AzureResource]):
+        """Discover VM-SSH public key relationships and add dependencies.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find VMs and SSH public keys
+        vms = [r for r in resources if r.resource_type == 'Microsoft.Compute/virtualMachines']
+        ssh_keys = [r for r in resources if r.resource_type == 'Microsoft.Compute/sshPublicKeys']
+        
+        if not vms or not ssh_keys:
+            return
+        
+        try:
+            # For each SSH public key, find VMs that use it
+            for ssh_key in ssh_keys:
+                try:
+                    # Get SSH key details to extract the public key data
+                    ssh_key_details = self.compute_client.ssh_public_keys.get(
+                        ssh_key.resource_group,
+                        ssh_key.name
+                    )
+                    
+                    if not ssh_key_details.public_key:
+                        continue
+                    
+                    # Get the public key data for comparison
+                    ssh_public_key_data = ssh_key_details.public_key.strip()
+                    
+                    # Check each VM to see if it uses this SSH key
+                    for vm in vms:
+                        try:
+                            vm_details = self.compute_client.virtual_machines.get(
+                                vm.resource_group,
+                                vm.name
+                            )
+                            
+                            # Check Linux configuration for SSH keys
+                            if (vm_details.os_profile and 
+                                vm_details.os_profile.linux_configuration and 
+                                vm_details.os_profile.linux_configuration.ssh and
+                                vm_details.os_profile.linux_configuration.ssh.public_keys):
+                                
+                                for public_key_config in vm_details.os_profile.linux_configuration.ssh.public_keys:
+                                    if (public_key_config.key_data and 
+                                        public_key_config.key_data.strip() == ssh_public_key_data):
+                                        # VM uses this SSH key - create dependency
+                                        vm.dependencies.append(ssh_key.name)
+                                        logger.debug(f"Added SSH key dependency: {vm.name} -> {ssh_key.name}")
+                                        break
+                                        
+                        except Exception as e:
+                            logger.warning(f"Could not get VM details for SSH key analysis '{vm.name}': {e}")
+                            continue
+                            
+                except Exception as e:
+                    logger.warning(f"Could not get SSH key details for '{ssh_key.name}': {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.warning(f"Failed to discover VM-SSH key relationships: {e}")
+    
+    def _discover_gallery_relationships(self, resources: List[AzureResource]):
+        """Discover Azure Compute Gallery hierarchy relationships and add dependencies.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find gallery resources
+        galleries = [r for r in resources if r.resource_type == 'Microsoft.Compute/galleries']
+        gallery_images = [r for r in resources if r.resource_type == 'Microsoft.Compute/galleries/images']
+        gallery_versions = [r for r in resources if r.resource_type == 'Microsoft.Compute/galleries/images/versions']
+        
+        if not galleries and not gallery_images and not gallery_versions:
+            return
+        
+        try:
+            # Create relationships for gallery images -> galleries
+            for gallery_image in gallery_images:
+                # Extract gallery name from the image resource name
+                # Format: gallery_name/image_name
+                if '/' in gallery_image.name:
+                    gallery_name = gallery_image.name.split('/')[0]
+                    
+                    # Find the corresponding gallery
+                    for gallery in galleries:
+                        if gallery.name == gallery_name:
+                            gallery_image.dependencies.append(gallery.name)
+                            logger.debug(f"Added gallery dependency: {gallery_image.name} -> {gallery.name}")
+                            break
+            
+            # Create relationships for gallery image versions -> gallery images
+            for gallery_version in gallery_versions:
+                # Extract gallery and image name from version resource name
+                # Format: gallery_name/image_name/version
+                name_parts = gallery_version.name.split('/')
+                if len(name_parts) >= 3:
+                    gallery_name = name_parts[0]
+                    image_name = name_parts[1]
+                    gallery_image_name = f"{gallery_name}/{image_name}"
+                    
+                    # Find the corresponding gallery image
+                    for gallery_image in gallery_images:
+                        if gallery_image.name == gallery_image_name:
+                            gallery_version.dependencies.append(gallery_image.name)
+                            logger.debug(f"Added gallery image dependency: {gallery_version.name} -> {gallery_image.name}")
+                            break
+                            
+        except Exception as e:
+            logger.warning(f"Failed to discover gallery relationships: {e}")
+    
+    def _discover_managed_identity_relationships(self, resources: List[AzureResource]):
+        """Discover managed identity usage relationships and add dependencies.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find managed identities and potential resources that use them
+        managed_identities = [r for r in resources if r.resource_type == 'Microsoft.ManagedIdentity/userAssignedIdentities']
+        potential_users = [r for r in resources if r.resource_type in [
+            'Microsoft.Compute/virtualMachines',
+            'Microsoft.Compute/virtualMachineScaleSets',
+            'Microsoft.ContainerService/managedClusters',
+            'Microsoft.RedHatOpenShift/OpenShiftClusters',
+            'Microsoft.Web/sites',
+            'Microsoft.Storage/storageAccounts'
+        ]]
+        
+        if not managed_identities or not potential_users:
+            return
+        
+        try:
+            # For each potential user resource, check if it uses any managed identities
+            for resource in potential_users:
+                try:
+                    resource_details = None
+                    
+                    # Get resource details based on type
+                    if resource.resource_type == 'Microsoft.Compute/virtualMachines':
+                        resource_details = self.compute_client.virtual_machines.get(
+                            resource.resource_group,
+                            resource.name
+                        )
+                    elif resource.resource_type == 'Microsoft.Compute/virtualMachineScaleSets':
+                        resource_details = self.compute_client.virtual_machine_scale_sets.get(
+                            resource.resource_group,
+                            resource.name
+                        )
+                    
+                    # Check for managed identity usage
+                    if resource_details and hasattr(resource_details, 'identity') and resource_details.identity:
+                        identity_obj = resource_details.identity
+                        
+                        # Check for user-assigned identities
+                        if (hasattr(identity_obj, 'user_assigned_identities') and 
+                            identity_obj.user_assigned_identities):
+                            
+                            for identity_id, identity_info in identity_obj.user_assigned_identities.items():
+                                # Extract identity name from resource ID
+                                identity_name = self._extract_resource_name_from_id(identity_id)
+                                
+                                # Find the corresponding managed identity resource
+                                for managed_identity in managed_identities:
+                                    if managed_identity.name == identity_name:
+                                        resource.dependencies.append(managed_identity.name)
+                                        logger.debug(f"Added managed identity dependency: {resource.name} -> {managed_identity.name}")
+                                        break
+                        
+                        # Check for system-assigned identity (would be implicit, no explicit dependency)
+                        if (hasattr(identity_obj, 'type') and 
+                            identity_obj.type and 
+                            'SystemAssigned' in str(identity_obj.type)):
+                            logger.debug(f"Resource {resource.name} uses system-assigned managed identity")
+                            
+                except Exception as e:
+                    logger.warning(f"Could not get managed identity details for '{resource.name}': {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.warning(f"Failed to discover managed identity relationships: {e}")
+    
+    def _discover_private_dns_relationships(self, resources: List[AzureResource]):
+        """Discover Private DNS Zone and VNet link relationships and add dependencies.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find Private DNS resources
+        private_dns_zones = [r for r in resources if r.resource_type == 'Microsoft.Network/privateDnsZones']
+        vnet_links = [r for r in resources if r.resource_type == 'Microsoft.Network/privateDnsZones/virtualNetworkLinks']
+        vnets = [r for r in resources if r.resource_type == 'Microsoft.Network/virtualNetworks']
+        
+        if not private_dns_zones and not vnet_links:
+            return
+        
+        try:
+            # Create relationships for VNet links -> Private DNS Zones
+            for vnet_link in vnet_links:
+                # Extract DNS zone name from VNet link resource name
+                # Format: zone_name/link_name
+                if '/' in vnet_link.name:
+                    dns_zone_name = vnet_link.name.split('/')[0]
+                    
+                    # Find the corresponding Private DNS Zone
+                    for dns_zone in private_dns_zones:
+                        if dns_zone.name == dns_zone_name:
+                            vnet_link.dependencies.append(dns_zone.name)
+                            logger.debug(f"Added Private DNS Zone dependency: {vnet_link.name} -> {dns_zone.name}")
+                            break
+            
+            # Create relationships for VNet links -> Virtual Networks
+            for vnet_link in vnet_links:
+                try:
+                    # Get VNet link details to find the connected VNet
+                    dns_zone_name = vnet_link.name.split('/')[0] if '/' in vnet_link.name else vnet_link.name
+                    link_name = vnet_link.name.split('/')[-1] if '/' in vnet_link.name else vnet_link.name
+                    
+                    # Use Azure CLI to get VNet link details (more reliable than SDK for Private DNS)
+                    import subprocess
+                    import json
+                    
+                    result = subprocess.run([
+                        'az', 'network', 'private-dns', 'link', 'vnet', 'show',
+                        '--resource-group', vnet_link.resource_group,
+                        '--zone-name', dns_zone_name,
+                        '--name', link_name,
+                        '--query', 'virtualNetwork.id',
+                        '-o', 'json'
+                    ], capture_output=True, text=True, check=True)
+                    
+                    vnet_id = json.loads(result.stdout)
+                    if vnet_id:
+                        # Extract VNet name from resource ID
+                        vnet_name = self._extract_resource_name_from_id(vnet_id)
+                        
+                        # Find the corresponding VNet resource
+                        for vnet in vnets:
+                            if vnet.name == vnet_name:
+                                vnet_link.dependencies.append(vnet.name)
+                                logger.debug(f"Added VNet dependency: {vnet_link.name} -> {vnet.name}")
+                                break
+                                
+                except Exception as e:
+                    logger.warning(f"Could not get VNet link details for '{vnet_link.name}': {e}")
+                    continue
+            
+            # Create relationships from Private DNS Zones to VNets they serve (through VNet links)
+            for private_dns_zone in private_dns_zones:
+                # Find VNet links that belong to this DNS zone
+                zone_vnet_links = [vl for vl in vnet_links if vl.name.startswith(f"{private_dns_zone.name}/")]
+                
+                for zone_vnet_link in zone_vnet_links:
+                    # Get the VNets connected through this link
+                    for dep_name in zone_vnet_link.dependencies:
+                        # Find VNet resources in dependencies
+                        for vnet in vnets:
+                            if vnet.name == dep_name:
+                                private_dns_zone.dependencies.append(vnet.name)
+                                logger.debug(f"Added VNet dependency for DNS resolution: {private_dns_zone.name} -> {vnet.name}")
+                                break
+                                
+        except Exception as e:
+            logger.warning(f"Failed to discover Private DNS relationships: {e}")
+    
+    def _discover_route_table_relationships(self, resources: List[AzureResource]):
+        """Discover route table to subnet relationships and add dependencies.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find route tables and subnets
+        route_tables = [r for r in resources if r.resource_type == 'Microsoft.Network/routeTables']
+        subnets = [r for r in resources if r.resource_type == 'Microsoft.Network/virtualNetworks/subnets']
+        
+        if not route_tables or not subnets:
+            return
+        
+        try:
+            # For each route table, find the subnets that use it
+            for route_table in route_tables:
+                try:
+                    # Get route table details to find associated subnets
+                    route_table_details = self.network_client.route_tables.get(
+                        route_table.resource_group,
+                        route_table.name
+                    )
+                    
+                    # Check for subnet associations
+                    if hasattr(route_table_details, 'subnets') and route_table_details.subnets:
+                        for subnet_ref in route_table_details.subnets:
+                            if subnet_ref.id:
+                                # Extract subnet name from resource ID
+                                # Format: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet}
+                                id_parts = subnet_ref.id.split('/')
+                                if len(id_parts) >= 11 and 'subnets' in id_parts:
+                                    vnet_index = id_parts.index('virtualNetworks')
+                                    subnet_index = id_parts.index('subnets')
+                                    if vnet_index + 1 < len(id_parts) and subnet_index + 1 < len(id_parts):
+                                        vnet_name = id_parts[vnet_index + 1]
+                                        subnet_name = id_parts[subnet_index + 1]
+                                        full_subnet_name = f"{vnet_name}/{subnet_name}"
+                                        
+                                        # Find the corresponding subnet resource
+                                        for subnet in subnets:
+                                            if subnet.name == full_subnet_name:
+                                                subnet.dependencies.append(route_table.name)
+                                                logger.debug(f"Added route table dependency: {subnet.name} -> {route_table.name}")
+                                                break
+                                
+                except Exception as e:
+                    logger.warning(f"Could not get route table details for '{route_table.name}': {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.warning(f"Failed to discover route table relationships: {e}")
+    
+    def _discover_dns_zone_relationships(self, resources: List[AzureResource]):
+        """Discover DNS zone relationships with load balancers, public IPs, and cluster resources.
+        
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        # Find DNS zones and potential related resources across ALL resource groups
+        dns_zones = [r for r in resources if r.resource_type == 'Microsoft.Network/dnszones']
+        
+        if not dns_zones:
+            return
+        
+        # For DNS zones, we need to look across ALL resource groups for related resources
+        # Get all resources from the subscription to find cross-resource-group relationships
+        try:
+            all_load_balancers = []
+            all_public_ips = []
+            all_master_vms = []
+            
+            # First, get resources from the current list
+            load_balancers = [r for r in resources if r.resource_type == 'Microsoft.Network/loadBalancers']
+            public_ips = [r for r in resources if r.resource_type == 'Microsoft.Network/publicIPAddresses']
+            master_vms = [r for r in resources if r.resource_type == 'Microsoft.Compute/virtualMachines' and 'master' in r.name.lower()]
+            
+            all_load_balancers.extend(load_balancers)
+            all_public_ips.extend(public_ips)
+            all_master_vms.extend(master_vms)
+            
+            # For each DNS zone, analyze its records to find relationships
+            for dns_zone in dns_zones:
+                try:
+                    # Get DNS zone records to check for cluster relationships
+                    import subprocess
+                    import json
+                    
+                    # Get record sets with metadata
+                    result = subprocess.run([
+                        'az', 'network', 'dns', 'record-set', 'list',
+                        '--resource-group', dns_zone.resource_group,
+                        '--zone-name', dns_zone.name,
+                        '--query', '[].{name:name, type:type, metadata:metadata}',
+                        '-o', 'json'
+                    ], capture_output=True, text=True, check=True)
+                    
+                    record_sets = json.loads(result.stdout)
+                    
+                    # Look for records with cluster metadata
+                    cluster_names = set()
+                    for record in record_sets:
+                        if record.get('metadata'):
+                            for key, value in record['metadata'].items():
+                                if 'kubernetes.io_cluster.' in key and value == 'owned':
+                                    # Extract cluster name from metadata key
+                                    cluster_name = key.replace('kubernetes.io_cluster.', '')
+                                    cluster_names.add(cluster_name)
+                                    logger.debug(f"DNS zone '{dns_zone.name}' serves cluster '{cluster_name}'")
+                    
+                    # Connect DNS zone to related cluster resources
+                    for cluster_name in cluster_names:
+                        # Connect to load balancers with matching cluster name
+                        for lb in all_load_balancers:
+                            if cluster_name in lb.name.lower():
+                                dns_zone.dependencies.append(lb.name)
+                                logger.debug(f"Added DNS-LoadBalancer dependency: {dns_zone.name} -> {lb.name}")
+                        
+                        # Connect to public IPs with matching cluster name
+                        for pip in all_public_ips:
+                            if cluster_name in pip.name.lower():
+                                dns_zone.dependencies.append(pip.name)
+                                logger.debug(f"Added DNS-PublicIP dependency: {dns_zone.name} -> {pip.name}")
+                        
+                        # Connect to master VMs with matching cluster name (they serve the API)
+                        for master_vm in all_master_vms:
+                            if cluster_name in master_vm.name.lower():
+                                dns_zone.dependencies.append(master_vm.name)
+                                logger.debug(f"Added DNS-Master dependency: {dns_zone.name} -> {master_vm.name}")
+                                
+                except Exception as e:
+                    logger.warning(f"Could not analyze DNS zone records for '{dns_zone.name}': {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.warning(f"Failed to discover DNS zone relationships: {e}")
     
     def _discover_nic_private_endpoint_relationships(self, resources: List[AzureResource]):
         """Discover NIC-to-private endpoint and private link service relationships and add dependencies.
@@ -689,26 +1159,50 @@ class AzureClient:
                 cluster_storage_accounts = []
                 for sa in storage_accounts:
                     # Check if storage account name suggests cluster usage
-                    if any(keyword in sa.name.lower() for keyword in ['cluster', 'registry', 'image']):
+                    sa_name_lower = sa.name.lower()
+                    if any(keyword in sa_name_lower for keyword in ['cluster', 'registry', 'image']):
                         cluster_storage_accounts.append(sa)
+                    else:
+                        # Also check for naming patterns that include cluster/resource group names
+                        # Extract potential cluster identifier from resource group or VM names
+                        if vms:
+                            # Look for common prefixes in VM names that might match storage account name
+                            vm_prefixes = set()
+                            for vm in vms:
+                                if 'master' in vm.name.lower() or 'worker' in vm.name.lower():
+                                    # Extract cluster name from VM name (e.g., "byoid-fp64f" from "byoid-fp64f-master-0")
+                                    parts = vm.name.lower().split('-')
+                                    if len(parts) >= 3:  # e.g., ["byoid", "fp64f", "master", "0"]
+                                        potential_cluster_name = '-'.join(parts[:-2])  # "byoid-fp64f"
+                                        # Remove hyphens for storage account name comparison
+                                        cluster_name_no_hyphen = potential_cluster_name.replace('-', '')
+                                        vm_prefixes.add(cluster_name_no_hyphen)
+                            
+                            # Check if storage account name contains any of these cluster prefixes
+                            for prefix in vm_prefixes:
+                                if prefix in sa_name_lower and len(prefix) > 3:  # Avoid short/common prefixes
+                                    cluster_storage_accounts.append(sa)
+                                    logger.debug(f"Storage account '{sa.name}' identified as cluster storage based on naming pattern '{prefix}'")
+                                    break
                 
                 if cluster_storage_accounts:
                     # Connect cluster storage to master nodes (they manage cluster resources)
                     master_vms = [vm for vm in vms if 'master' in vm.name.lower()]
                     if master_vms:
-                        # Connect to the first master node as the cluster coordinator
-                        master_vm = master_vms[0]
-                        for sa in cluster_storage_accounts:
-                            master_vm.dependencies.append(sa.name)
-                            logger.debug(f"Added cluster storage dependency: {master_vm.name} -> {sa.name} (cluster storage)")
+                        # Connect to ALL master nodes since they all manage cluster resources
+                        for master_vm in master_vms:
+                            for sa in cluster_storage_accounts:
+                                master_vm.dependencies.append(sa.name)
+                                logger.debug(f"Added cluster storage dependency: {master_vm.name} -> {sa.name} (cluster storage)")
                     else:
                         # If no masters, connect to any VM that might be a controller
                         controller_vms = [vm for vm in vms if any(keyword in vm.name.lower() for keyword in ['control', 'manage'])]
                         if controller_vms:
-                            controller_vm = controller_vms[0]
-                            for sa in cluster_storage_accounts:
-                                controller_vm.dependencies.append(sa.name)
-                                logger.debug(f"Added cluster storage dependency: {controller_vm.name} -> {sa.name} (cluster storage)")
+                            # Connect to all controller VMs for consistency
+                            for controller_vm in controller_vms:
+                                for sa in cluster_storage_accounts:
+                                    controller_vm.dependencies.append(sa.name)
+                                    logger.debug(f"Added cluster storage dependency: {controller_vm.name} -> {sa.name} (cluster storage)")
             
         except Exception as e:
             logger.warning(f"Failed to discover storage account relationships: {e}")

@@ -20,18 +20,18 @@ class AzViz:
     
     def __init__(
         self, 
-        subscription_id: Optional[str] = None,
+        subscription_identifier: Optional[str] = None,
         credential: Optional[Any] = None,
         icon_directory: Optional[Union[str, Path]] = None
     ):
         """Initialize AzViz instance.
         
         Args:
-            subscription_id: Azure subscription ID. If None, uses first available.
+            subscription_identifier: Azure subscription ID or name. If None, uses first available.
             credential: Azure credential object. If None, uses DefaultAzureCredential.
             icon_directory: Path to Azure service icons. If None, uses package icons.
         """
-        self.azure_client = AzureClient(subscription_id, credential)
+        self.azure_client = AzureClient(subscription_identifier, credential)
         self.icon_manager = IconManager(icon_directory)
         
         # Verify Azure authentication
@@ -136,6 +136,9 @@ class AzViz:
             raise ValueError(f"No resources found in resource groups: {resource_groups}")
         
         logger.info(f"Found {len(all_resources)} total resources across {len(resource_groups)} resource groups")
+        
+        # Post-process cross-resource-group relationships (like DNS zones)
+        self.azure_client._discover_dns_zone_relationships(all_resources)
         
         # Build graph
         graph_builder = GraphBuilder(config)

@@ -177,13 +177,13 @@ class DOTGenerator:
         if not subscription_name and not subscription_id:
             return ""
         
-        # Create title text
+        # Create title text with proper labels
         if subscription_name and subscription_id:
-            title_text = f"{subscription_name}\\n({subscription_id})"
+            title_text = f"Subscription Name: {subscription_name}\\nSubscription ID: {subscription_id}"
         elif subscription_name:
-            title_text = subscription_name
+            title_text = f"Subscription Name: {subscription_name}"
         else:
-            title_text = subscription_id
+            title_text = f"Subscription ID: {subscription_id}"
         
         # Escape special characters for DOT
         title_text = title_text.replace('"', '\\"')
