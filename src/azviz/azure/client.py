@@ -577,8 +577,12 @@ class AzureClient:
                                         break
                         else:
                             # Log as debug instead of warning if it's a common access issue
-                            if "ResourceNotFound" in result.stderr or "exit status 3" in str(result.stderr):
-                                logger.debug(f"VNet link '{vnet_link.name}' not accessible or not found - skipping")
+                            error_output = result.stderr
+                            if ("ResourceNotFound" in error_output or 
+                                "ResourceGroupNotFound" in error_output or 
+                                "exit status 3" in str(error_output) or
+                                "could not be found" in error_output):
+                                logger.debug(f"VNet link '{vnet_link.name}' references non-existent resource group or has been deleted - skipping")
                             else:
                                 logger.warning(f"Could not get VNet link details for '{vnet_link.name}': {result.stderr}")
                                 
