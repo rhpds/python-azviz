@@ -1,15 +1,21 @@
 """Main AzViz class for generating Azure resource topology diagrams."""
 
 import logging
-from typing import List, Optional, Union, Set, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Union
 
 from ..azure import AzureClient
-from ..visualization import GraphBuilder, DOTGenerator, GraphRenderer
 from ..icons import IconManager
+from ..visualization import DOTGenerator, GraphBuilder, GraphRenderer
 from .models import (
-    VisualizationConfig, Theme, OutputFormat, LabelVerbosity, 
-    Direction, Splines, AzureResource, NetworkTopology
+    AzureResource,
+    Direction,
+    LabelVerbosity,
+    NetworkTopology,
+    OutputFormat,
+    Splines,
+    Theme,
+    VisualizationConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -17,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 class AzViz:
     """Main class for Azure resource topology visualization."""
-    
+
     def __init__(
-        self, 
+        self,
         subscription_identifier: Optional[str] = None,
         credential: Optional[Any] = None,
-        icon_directory: Optional[Union[str, Path]] = None
+        icon_directory: Optional[Union[str, Path]] = None,
     ):
         """Initialize AzViz instance.
         
@@ -33,13 +39,13 @@ class AzViz:
         """
         self.azure_client = AzureClient(subscription_identifier, credential)
         self.icon_manager = IconManager(icon_directory)
-        
+
         # Verify Azure authentication
         if not self.azure_client.test_authentication():
             raise RuntimeError("Azure authentication failed. Please run 'az login' or configure credentials.")
-        
+
         logger.info("AzViz initialized successfully")
-    
+
     def export_diagram(
         self,
         resource_group: Union[str, List[str]],
@@ -55,7 +61,7 @@ class AzViz:
         show_power_state: bool = True,
         compute_only: bool = False,
         save_dot: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
     ) -> Path:
         """Export Azure resource topology diagram.
 
@@ -88,11 +94,11 @@ class AzViz:
             all_rgs = self.get_available_resource_groups()
             if not all_rgs:
                 raise ValueError("No resource groups found in subscription")
-            resource_groups = [rg['name'] for rg in all_rgs]
+            resource_groups = [rg["name"] for rg in all_rgs]
             logger.info(f"Found {len(resource_groups)} resource groups to visualize")
         else:
             resource_groups = list(resource_group)
-        
+
         # Create configuration
         config = VisualizationConfig(
             resource_groups=resource_groups,
@@ -106,28 +112,28 @@ class AzViz:
             show_legends=show_legends,
             show_power_state=show_power_state,
             compute_only=compute_only,
-            output_file=output_file
+            output_file=output_file,
         )
-        
+
         logger.info(f"Starting diagram export for resource groups: {resource_groups}")
-        
+
         # Discover resources and network topology
         all_resources = []
         combined_topology = NetworkTopology()
-        
+
         for rg_name in resource_groups:
             logger.info(f"Discovering resources in resource group: {rg_name}")
-            
+
             # Get resources
             resources = self.azure_client.get_resources_in_group(rg_name, config.show_power_state)
             all_resources.extend(resources)
-            
+
             # Get network topology
             if resources:
                 # Use location from first resource
                 location = resources[0].location
                 topology = self.azure_client.get_network_topology(rg_name, location)
-                
+
                 # Combine topologies
                 combined_topology.virtual_networks.extend(topology.virtual_networks)
                 combined_topology.subnets.extend(topology.subnets)
@@ -136,46 +142,46 @@ class AzViz:
                 combined_topology.load_balancers.extend(topology.load_balancers)
                 combined_topology.network_security_groups.extend(topology.network_security_groups)
                 combined_topology.associations.extend(topology.associations)
-        
+
         if not all_resources:
             raise ValueError(f"No resources found in resource groups: {resource_groups}")
-        
+
         logger.info(f"Found {len(all_resources)} total resources across {len(resource_groups)} resource groups")
-        
+
         # Post-process cross-resource-group relationships (like DNS zones)
         self.azure_client._discover_dns_zone_relationships(all_resources)
-        
+
         # Build graph
         graph_builder = GraphBuilder(config)
         graph = graph_builder.build_graph(all_resources, combined_topology)
-        
+
         # Generate DOT language
         dot_generator = DOTGenerator(config)
         dot_content = dot_generator.generate_dot(
-            graph, 
+            graph,
             graph_builder.subgraphs,
             subscription_name=self.azure_client.subscription_name,
-            subscription_id=self.azure_client.subscription_id
+            subscription_id=self.azure_client.subscription_id,
         )
-        
+
         # Save DOT file if requested
         if save_dot:
-            dot_file = Path(output_file).with_suffix('.dot')
+            dot_file = Path(output_file).with_suffix(".dot")
             renderer = GraphRenderer(verbose=verbose)
             renderer.save_dot_file(dot_content, str(dot_file))
             logger.info(f"DOT file saved: {dot_file}")
-        
+
         # Validate output file extension matches format
         output_path_obj = Path(output_file)
         format_extensions = {
-            OutputFormat.PNG: '.png',
-            OutputFormat.SVG: '.svg', 
-            OutputFormat.HTML: '.html'
+            OutputFormat.PNG: ".png",
+            OutputFormat.SVG: ".svg",
+            OutputFormat.HTML: ".html",
         }
-        
+
         expected_extension = format_extensions[output_format]
         actual_extension = output_path_obj.suffix.lower()
-        
+
         # If no extension provided, add the correct one
         if not actual_extension:
             final_output_file = str(output_path_obj.with_suffix(expected_extension))
@@ -185,19 +191,19 @@ class AzViz:
             raise ValueError(
                 f"Output file extension '{actual_extension}' does not match format '{output_format.value}'. "
                 f"Expected extension: '{expected_extension}'. "
-                f"Please use '{output_path_obj.stem}{expected_extension}' or change the format."
+                f"Please use '{output_path_obj.stem}{expected_extension}' or change the format.",
             )
         else:
             # Extension is correct
             final_output_file = output_file
-        
+
         # Render diagram
         renderer = GraphRenderer(verbose=verbose)
         output_path = renderer.render(dot_content, final_output_file, output_format)
-        
+
         logger.info(f"Diagram exported successfully: {output_path}")
         return output_path
-    
+
     def get_available_resource_groups(self) -> List[Dict[str, Any]]:
         """Get list of available resource groups in subscription.
         
@@ -205,7 +211,7 @@ class AzViz:
             List of resource group information dictionaries.
         """
         return self.azure_client.get_resource_groups()
-    
+
     def preview_resources(self, resource_group: str) -> List[AzureResource]:
         """Preview resources in a resource group without generating diagram.
         
@@ -216,7 +222,7 @@ class AzViz:
             List of Azure resources.
         """
         return self.azure_client.get_resources_in_group(resource_group, True)
-    
+
     def validate_prerequisites(self) -> Dict[str, bool]:
         """Validate all prerequisites for diagram generation.
         
@@ -224,22 +230,22 @@ class AzViz:
             Dictionary with validation results.
         """
         results = {}
-        
+
         # Check Azure authentication
-        results['azure_auth'] = self.azure_client.test_authentication()
-        
+        results["azure_auth"] = self.azure_client.test_authentication()
+
         # Check Graphviz installation
         try:
             renderer = GraphRenderer(verbose=False)
-            results['graphviz'] = True
+            results["graphviz"] = True
         except RuntimeError:
-            results['graphviz'] = False
-        
+            results["graphviz"] = False
+
         # Check icon directory
-        results['icons'] = self.icon_manager.icon_directory.exists()
-        
+        results["icons"] = self.icon_manager.icon_directory.exists()
+
         return results
-    
+
     def get_supported_themes(self) -> List[str]:
         """Get list of supported visual themes.
         
@@ -247,7 +253,7 @@ class AzViz:
             List of theme names.
         """
         return [theme.value for theme in Theme]
-    
+
     def get_supported_formats(self) -> List[str]:
         """Get list of supported output formats.
         
@@ -255,7 +261,7 @@ class AzViz:
             List of format names.
         """
         return [fmt.value for fmt in OutputFormat]
-    
+
     def get_icon_mappings(self) -> Dict[str, str]:
         """Get available Azure resource icon mappings.
         

@@ -1,15 +1,16 @@
 """Data models and enums for AzViz."""
 
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
-from dataclasses import dataclass, field
+
 from pydantic import BaseModel
 
 
 class Theme(str, Enum):
     """Visual themes for diagram generation."""
     LIGHT = "light"
-    DARK = "dark" 
+    DARK = "dark"
     NEON = "neon"
 
 
@@ -83,9 +84,9 @@ class AzureResource:
             else:
                 names.append(dep.target_name)
         return names
-    
-    
-@dataclass  
+
+
+@dataclass
 class NetworkTopology:
     """Network topology information."""
     virtual_networks: List[Dict[str, Any]] = field(default_factory=list)
@@ -106,7 +107,7 @@ class GraphNode:
     category: str
     resource_type: str
     attributes: Dict[str, Any] = field(default_factory=dict)
-    
+
 
 @dataclass
 class GraphEdge:
@@ -122,7 +123,7 @@ class GraphEdge:
 class ThemeConfig:
     """Theme configuration settings."""
     background_color: str
-    node_color: str  
+    node_color: str
     edge_color: str
     font_color: str
     font_name: str = "Arial"
@@ -153,7 +154,7 @@ class ResourceRanking:
         "microsoft.compute/galleries/images/versions": 13,  # Image versions within images
         "microsoft.storage/storageaccounts": 14,  # Storage accounts for data storage
     }
-    
+
     @classmethod
     def get_rank(cls, resource_type: str) -> int:
         """Get ranking for resource type."""
