@@ -435,7 +435,6 @@ class AzureClient:
                                 and vm_details.os_profile.linux_configuration.ssh
                                 and vm_details.os_profile.linux_configuration.ssh.public_keys
                             ):
-
                                 for (
                                     public_key_config
                                 ) in (
@@ -608,7 +607,6 @@ class AzureClient:
                             hasattr(identity_obj, "user_assigned_identities")
                             and identity_obj.user_assigned_identities
                         ):
-
                             for (
                                 identity_id,
                                 _,
@@ -1649,7 +1647,6 @@ class AzureClient:
                         )
                         and vm_details.diagnostics_profile.boot_diagnostics.storage_uri
                     ):
-
                         storage_uri = (
                             vm_details.diagnostics_profile.boot_diagnostics.storage_uri
                         )
@@ -1684,7 +1681,6 @@ class AzureClient:
                         and vm_details.storage_profile.os_disk.vhd
                         and hasattr(vm_details.storage_profile.os_disk.vhd, "uri")
                     ):
-
                         vhd_uri = vm_details.storage_profile.os_disk.vhd.uri
                         if vhd_uri:
                             storage_name = (

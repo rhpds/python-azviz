@@ -189,7 +189,6 @@ class GraphBuilder:
                 resource.resource_type.lower() in compute_related_types
                 and resource.name not in related_resource_names
             ):
-
                 # Check if this resource depends on any compute resource
                 for dependency in resource.get_dependency_names():
                     if dependency in compute_resource_names:
@@ -203,7 +202,6 @@ class GraphBuilder:
                 resource.resource_type.lower() == "microsoft.network/networkinterfaces"
                 and resource.name not in related_resource_names
             ):
-
                 # Check if any compute resource depends on this NIC
                 for compute_resource in compute_resources:
                     for dependency in compute_resource.get_dependency_names():
@@ -1006,7 +1004,6 @@ class GraphBuilder:
                         == "Microsoft.RedHatOpenShift/OpenShiftClusters"
                         and "openshift_dns_domains" in resource.properties
                     ):
-
                         dns_domains = resource.properties["openshift_dns_domains"]
                         for domain in dns_domains:
                             # Check if DNS zone domain is a parent domain for any cluster domain
