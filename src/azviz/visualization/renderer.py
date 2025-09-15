@@ -3,12 +3,14 @@
 import base64
 import logging
 import os
+import re
 import shutil
 import sys
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from typing import Generator
 
-import graphviz
+import graphviz  # type: ignore[import-untyped]
 
 from ..core.models import OutputFormat
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextmanager
-def suppress_stderr():
+def suppress_stderr() -> Generator[None, None, None]:
     """Context manager to temporarily suppress stderr output."""
     with open(os.devnull, "w") as devnull:
         old_stderr = sys.stderr
@@ -154,9 +156,15 @@ class GraphRenderer:
 
             with context_manager:
                 if output_format == OutputFormat.PNG:
-                    return graph.pipe(format="png")
+                    result = graph.pipe(format="png")
+                    return (
+                        result if isinstance(result, bytes) else result.encode("utf-8")
+                    )
                 if output_format == OutputFormat.SVG:
-                    return graph.pipe(format="svg")
+                    result = graph.pipe(format="svg")
+                    return (
+                        result if isinstance(result, bytes) else result.encode("utf-8")
+                    )
                 # HTML
                 svg_content = graph.pipe(format="svg", encoding="utf-8")
                 svg_with_embedded_icons = self._embed_icons_in_svg(svg_content)
@@ -623,7 +631,6 @@ class GraphRenderer:
         Returns:
             SVG content with embedded icons as data URLs.
         """
-        import re
         from pathlib import Path
 
         # Import icon manager
@@ -634,7 +641,7 @@ class GraphRenderer:
         # Find all img src references in the SVG
         img_pattern = r'<image[^>]*xlink:href="([^"]*)"[^>]*>'
 
-        def replace_image(match):
+        def replace_image(match: re.Match[str]) -> str:
             file_path = match.group(1)
 
             # Convert to Path object and check if it's an icon file

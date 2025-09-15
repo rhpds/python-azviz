@@ -2,7 +2,7 @@
 
 import logging
 from collections import defaultdict
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
 
@@ -30,10 +30,10 @@ class GraphBuilder:
             config: Visualization configuration.
         """
         self.config = config
-        self.graph = nx.DiGraph()
-        self.subgraphs = {}
-        self.nodes = []
-        self.edges = []
+        self.graph: nx.DiGraph = nx.DiGraph()
+        self.subgraphs: Dict[str, Any] = {}
+        self.nodes: List[GraphNode] = []
+        self.edges: List[GraphEdge] = []
 
     def build_graph(
         self,
@@ -287,7 +287,9 @@ class GraphBuilder:
 
         return dict(grouped)
 
-    def _create_resource_nodes(self, grouped_resources: Dict[str, List[AzureResource]]):
+    def _create_resource_nodes(
+        self, grouped_resources: Dict[str, List[AzureResource]]
+    ) -> None:
         """Create graph nodes from grouped resources.
 
         Args:
@@ -388,7 +390,7 @@ class GraphBuilder:
                     isinstance(item, dict) for item in value
                 ):
                     # Handle list of dictionaries (like external_pls_connections)
-                    safe_props[key] = value
+                    safe_props[key] = str(value)  # Convert to string for safe handling
             attributes["properties"] = safe_props
 
         return GraphNode(
@@ -405,7 +407,7 @@ class GraphBuilder:
         name: str,
         resource_names: List[str],
         category: str,
-        resource_type: str = None,
+        resource_type: Optional[str] = None,
     ) -> str:
         """Build node label based on verbosity settings.
 
@@ -508,7 +510,7 @@ class GraphBuilder:
         self,
         network_topology: NetworkTopology,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Create edges from network topology associations.
 
         Args:
@@ -548,7 +550,7 @@ class GraphBuilder:
                 )
                 self.edges.append(edge)
 
-    def _create_dependency_edges(self, resources: List[AzureResource]):
+    def _create_dependency_edges(self, resources: List[AzureResource]) -> None:
         """Create edges for resource dependencies.
 
         Args:
@@ -974,7 +976,7 @@ class GraphBuilder:
         self,
         resources: List[AzureResource],
         resource_by_name: Dict[str, AzureResource],
-    ):
+    ) -> None:
         """Create connections from DNS zones to infrastructure they serve.
 
         Args:
@@ -1113,7 +1115,7 @@ class GraphBuilder:
                     )
                     self.edges.append(edge)
 
-    def _populate_networkx_graph(self):
+    def _populate_networkx_graph(self) -> None:
         """Add nodes and edges to NetworkX graph."""
         # Add nodes
         for node in self.nodes:
@@ -1173,7 +1175,7 @@ class GraphBuilder:
         self,
         resources: List[AzureResource],
         network_topology: NetworkTopology,
-    ):
+    ) -> None:
         """Create hierarchical subgraphs for layout.
 
         Args:

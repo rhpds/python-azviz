@@ -83,7 +83,7 @@ class AzureResource:
         target_name: str,
         dependency_type: DependencyType = DependencyType.EXPLICIT,
         description: Optional[str] = None,
-    ):
+    ) -> None:
         """Add a dependency with type information."""
         dependency = ResourceDependency(target_name, dependency_type, description)
         self.dependencies.append(dependency)

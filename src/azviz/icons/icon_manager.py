@@ -144,7 +144,7 @@ class IconManager:
         """
         return self.icon_mappings.copy()
 
-    def add_custom_mapping(self, resource_type: str, icon_filename: str):
+    def add_custom_mapping(self, resource_type: str, icon_filename: str) -> None:
         """Add custom icon mapping.
 
         Args:

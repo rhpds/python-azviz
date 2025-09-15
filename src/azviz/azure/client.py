@@ -12,6 +12,7 @@ from azure.identity import (
 )
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
+from azure.mgmt.network.models import TopologyParameters
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.subscription import SubscriptionClient
 
@@ -83,6 +84,8 @@ class AzureClient:
             if not subscriptions:
                 raise ValueError("No Azure subscriptions found")
             first_sub = subscriptions[0]
+            if first_sub.subscription_id is None or first_sub.display_name is None:
+                raise ValueError("Subscription ID or name is None")
             return first_sub.subscription_id, first_sub.display_name
         except AzureError as e:
             raise ValueError(f"Failed to get Azure subscription: {e}") from e
@@ -120,27 +123,46 @@ class AzureClient:
             if uuid_pattern.match(subscription_identifier):
                 # It's likely a subscription ID, try to get it directly
                 for sub in subscriptions:
-                    if sub.subscription_id.lower() == subscription_identifier.lower():
+                    if (
+                        sub.subscription_id is not None
+                        and sub.subscription_id.lower()
+                        == subscription_identifier.lower()
+                    ):
+                        if sub.display_name is None:
+                            raise ValueError(
+                                f"Subscription display name is None for ID '{subscription_identifier}'"
+                            )
                         return sub.subscription_id, sub.display_name
                 raise ValueError(
                     f"Subscription ID '{subscription_identifier}' not found",
                 )
             # It's likely a subscription name, search by display name
             for sub in subscriptions:
-                if sub.display_name.lower() == subscription_identifier.lower():
+                if (
+                    sub.display_name is not None
+                    and sub.display_name.lower() == subscription_identifier.lower()
+                ):
+                    if sub.subscription_id is None:
+                        raise ValueError(
+                            f"Subscription ID is None for name '{subscription_identifier}'"
+                        )
                     return sub.subscription_id, sub.display_name
 
             # If exact match not found, try partial match
-            partial_matches = []
+            partial_matches: List[Tuple[str, str]] = []
             for sub in subscriptions:
-                if subscription_identifier.lower() in sub.display_name.lower():
-                    partial_matches.append((sub.subscription_id, sub.display_name))
+                if (
+                    sub.display_name is not None
+                    and subscription_identifier.lower() in sub.display_name.lower()
+                ):
+                    if sub.subscription_id is not None:
+                        partial_matches.append((sub.subscription_id, sub.display_name))
 
             if len(partial_matches) == 1:
                 logger.info(
                     f"Found partial match for subscription '{subscription_identifier}': {partial_matches[0][1]}",
                 )
-                return partial_matches[0]
+                return partial_matches[0][0], partial_matches[0][1]
             if len(partial_matches) > 1:
                 matches_str = ", ".join([f"'{match[1]}'" for match in partial_matches])
                 raise ValueError(
@@ -310,7 +332,7 @@ class AzureClient:
             )
             raise
 
-    def _discover_vm_disk_relationships(self, resources: List[AzureResource]):
+    def _discover_vm_disk_relationships(self, resources: List[AzureResource]) -> None:
         """Discover VM-disk relationships and add dependencies.
 
         Args:
@@ -385,7 +407,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover VM-disk relationships: {e}")
 
-    def _discover_vm_ssh_key_relationships(self, resources: List[AzureResource]):
+    def _discover_vm_ssh_key_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover VM-SSH public key relationships and add dependencies.
 
         Args:
@@ -467,7 +491,7 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover VM-SSH key relationships: {e}")
 
-    def _discover_gallery_relationships(self, resources: List[AzureResource]):
+    def _discover_gallery_relationships(self, resources: List[AzureResource]) -> None:
         """Discover Azure Compute Gallery hierarchy relationships and add dependencies.
 
         Args:
@@ -538,7 +562,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover gallery relationships: {e}")
 
-    def _discover_managed_identity_relationships(self, resources: List[AzureResource]):
+    def _discover_managed_identity_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover managed identity usage relationships and add dependencies.
 
         Args:
@@ -571,7 +597,7 @@ class AzureClient:
             # For each potential user resource, check if it uses any managed identities
             for resource in potential_users:
                 try:
-                    resource_details = None
+                    resource_details: Any = None
 
                     # Get resource details based on type
                     if resource.resource_type == "Microsoft.Compute/virtualMachines":
@@ -644,7 +670,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover managed identity relationships: {e}")
 
-    def _discover_private_dns_relationships(self, resources: List[AzureResource]):
+    def _discover_private_dns_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover Private DNS Zone and VNet link relationships and add dependencies.
 
         Args:
@@ -712,7 +740,7 @@ class AzureClient:
                         # Use the network management client to get virtual network links
                         # Note: This requires azure-mgmt-privatedns which might not be available
                         vnet_link_details = (
-                            self.network_client.virtual_network_links.get(
+                            self.network_client.virtual_network_links.get(  # type: ignore[attr-defined]
                                 vnet_link.resource_group,
                                 dns_zone_name,
                                 link_name,
@@ -838,7 +866,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover Private DNS relationships: {e}")
 
-    def _discover_route_table_relationships(self, resources: List[AzureResource]):
+    def _discover_route_table_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover route table to subnet relationships and add dependencies.
 
         Args:
@@ -909,7 +939,7 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover route table relationships: {e}")
 
-    def _discover_dns_zone_relationships(self, resources: List[AzureResource]):
+    def _discover_dns_zone_relationships(self, resources: List[AzureResource]) -> None:
         """Discover DNS zone relationships with load balancers, public IPs, and cluster resources.
 
         Args:
@@ -1051,7 +1081,7 @@ class AzureClient:
     def _discover_nic_private_endpoint_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover NIC-to-private endpoint and private link service relationships and add dependencies.
 
         Args:
@@ -1092,20 +1122,23 @@ class AzureClient:
                         and nic_details.private_endpoint
                     ):
                         pe_resource_id = nic_details.private_endpoint.id
-                        pe_name = self._extract_resource_name_from_id(pe_resource_id)
+                        if pe_resource_id:
+                            pe_name = self._extract_resource_name_from_id(
+                                pe_resource_id
+                            )
 
-                        # Find the corresponding private endpoint resource
-                        for pe in private_endpoints:
-                            if pe.name == pe_name:
-                                pe.add_dependency(
-                                    nic.name,
-                                    DependencyType.EXPLICIT,
-                                    "Azure API - private endpoint NIC",
-                                )
-                                logger.debug(
-                                    f"Added NIC dependency: {pe.name} -> {nic.name}",
-                                )
-                                break
+                            # Find the corresponding private endpoint resource
+                            for pe in private_endpoints:
+                                if pe.name == pe_name:
+                                    pe.add_dependency(
+                                        nic.name,
+                                        DependencyType.EXPLICIT,
+                                        "Azure API - private endpoint NIC",
+                                    )
+                                    logger.debug(
+                                        f"Added NIC dependency: {pe.name} -> {nic.name}",
+                                    )
+                                    break
 
                     # Check if this NIC belongs to a private link service
                     elif (
@@ -1113,20 +1146,23 @@ class AzureClient:
                         and nic_details.private_link_service
                     ):
                         pls_resource_id = nic_details.private_link_service.id
-                        pls_name = self._extract_resource_name_from_id(pls_resource_id)
+                        if pls_resource_id:
+                            pls_name = self._extract_resource_name_from_id(
+                                pls_resource_id
+                            )
 
-                        # Find the corresponding private link service resource
-                        for pls in private_link_services:
-                            if pls.name == pls_name:
-                                pls.add_dependency(
-                                    nic.name,
-                                    DependencyType.EXPLICIT,
-                                    "Azure API - private link service NIC",
-                                )
-                                logger.debug(
-                                    f"Added NIC dependency: {pls.name} -> {nic.name}",
-                                )
-                                break
+                            # Find the corresponding private link service resource
+                            for pls in private_link_services:
+                                if pls.name == pls_name:
+                                    pls.add_dependency(
+                                        nic.name,
+                                        DependencyType.EXPLICIT,
+                                        "Azure API - private link service NIC",
+                                    )
+                                    logger.debug(
+                                        f"Added NIC dependency: {pls.name} -> {nic.name}",
+                                    )
+                                    break
 
                 except Exception as e:
                     logger.warning(f"Could not get NIC details for '{nic.name}': {e}")
@@ -1140,7 +1176,7 @@ class AzureClient:
     def _discover_private_link_service_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover private link service-to-load balancer relationships and add dependencies.
 
         Args:
@@ -1209,7 +1245,7 @@ class AzureClient:
                 f"Failed to discover private link service-load balancer relationships: {e}",
             )
 
-    def _discover_all_subnets(self, resources: List[AzureResource]):
+    def _discover_all_subnets(self, resources: List[AzureResource]) -> None:
         """Discover all VNets and their subnets, creating virtual subnet resources.
 
         Args:
@@ -1223,7 +1259,7 @@ class AzureClient:
                 for vnet in self.network_client.virtual_networks.list_all():
                     vnets.append(vnet)
                     logger.debug(
-                        f"Found VNet: {vnet.name} in RG: {vnet.id.split('/')[4] if '/' in vnet.id else 'unknown'}",
+                        f"Found VNet: {vnet.name} in RG: {vnet.id.split('/')[4] if vnet.id and '/' in vnet.id else 'unknown'}",
                     )
             except Exception as e:
                 logger.warning(f"Could not list VNets: {e}")
@@ -1233,7 +1269,15 @@ class AzureClient:
             for vnet in vnets:
                 try:
                     vnet_name = vnet.name
-                    vnet_rg = vnet.id.split("/")[4] if "/" in vnet.id else "unknown"
+                    vnet_rg = (
+                        vnet.id.split("/")[4]
+                        if vnet.id and "/" in vnet.id
+                        else "unknown"
+                    )
+
+                    # Skip if we couldn't determine the resource group
+                    if vnet_rg == "unknown" or not vnet_name:
+                        continue
 
                     # Get detailed VNet information including subnets
                     vnet_details = self.network_client.virtual_networks.get(
@@ -1260,7 +1304,7 @@ class AzureClient:
                                     name=subnet_full_name,
                                     resource_type="Microsoft.Network/virtualNetworks/subnets",
                                     category="Network",
-                                    location=vnet.location,
+                                    location=vnet.location or "unknown",
                                     resource_group=vnet_rg,
                                     subscription_id=self.subscription_id,
                                     properties={
@@ -1291,7 +1335,7 @@ class AzureClient:
     def _discover_private_endpoint_subnet_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover private endpoint-to-subnet relationships, create virtual subnet resources, and add dependencies.
 
         Args:
@@ -1425,7 +1469,9 @@ class AzureClient:
                 f"Failed to discover private endpoint-subnet relationships: {e}",
             )
 
-    def _discover_nic_subnet_relationships(self, resources: List[AzureResource]):
+    def _discover_nic_subnet_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover NIC-to-subnet relationships and add dependencies.
 
         Args:
@@ -1500,7 +1546,7 @@ class AzureClient:
     def _add_internet_and_discover_nsg_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Add internet resource for public IPs and discover NSG relationships.
 
         Args:
@@ -1601,7 +1647,9 @@ class AzureClient:
                 f"Failed to add internet resource and discover NSG relationships: {e}",
             )
 
-    def _discover_storage_account_relationships(self, resources: List[AzureResource]):
+    def _discover_storage_account_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover storage account relationships with VMs and other resources.
 
         Args:
@@ -1845,7 +1893,7 @@ class AzureClient:
     def _add_vnets_and_establish_network_hierarchy(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Add VNet resources and establish proper network hierarchy relationships.
 
         Args:
@@ -1938,7 +1986,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to add VNets and establish network hierarchy: {e}")
 
-    def _discover_openshift_cluster_relationships(self, resources: List[AzureResource]):
+    def _discover_openshift_cluster_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover OpenShift cluster relationships and add dependencies.
 
         Args:
@@ -2143,7 +2193,7 @@ class AzureClient:
     def _discover_solutions_application_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover Solutions application relationships to managed resource groups and add dependencies.
 
         Args:
@@ -2319,7 +2369,7 @@ class AzureClient:
     def _discover_application_gateway_relationships(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover Application Gateway relationships to subnets, public IPs, and WAF policies.
 
         Args:
@@ -2372,21 +2422,22 @@ class AzureClient:
                         and app_gw_details.firewall_policy
                     ):
                         waf_policy_id = app_gw_details.firewall_policy.id
-                        waf_policy_name = self._extract_resource_name_from_id(
-                            waf_policy_id,
-                        )
+                        if waf_policy_id:
+                            waf_policy_name = self._extract_resource_name_from_id(
+                                waf_policy_id,
+                            )
 
-                        for waf_policy in waf_policies:
-                            if waf_policy.name == waf_policy_name:
-                                app_gw.add_dependency(
-                                    waf_policy.name,
-                                    DependencyType.EXPLICIT,
-                                    "Azure API - Application Gateway WAF policy",
-                                )
-                                logger.debug(
-                                    f"Added WAF policy dependency: {app_gw.name} -> {waf_policy.name}",
-                                )
-                                break
+                            for waf_policy in waf_policies:
+                                if waf_policy.name == waf_policy_name:
+                                    app_gw.add_dependency(
+                                        waf_policy.name,
+                                        DependencyType.EXPLICIT,
+                                        "Azure API - Application Gateway WAF policy",
+                                    )
+                                    logger.debug(
+                                        f"Added WAF policy dependency: {app_gw.name} -> {waf_policy.name}",
+                                    )
+                                    break
 
                     # Extract public IP relationships from frontend IP configurations
                     if (
@@ -2399,21 +2450,24 @@ class AzureClient:
                                 and frontend_ip.public_ip_address
                             ):
                                 public_ip_id = frontend_ip.public_ip_address.id
-                                public_ip_name = self._extract_resource_name_from_id(
-                                    public_ip_id,
-                                )
+                                if public_ip_id:
+                                    public_ip_name = (
+                                        self._extract_resource_name_from_id(
+                                            public_ip_id,
+                                        )
+                                    )
 
-                                for public_ip in public_ips:
-                                    if public_ip.name == public_ip_name:
-                                        app_gw.add_dependency(
-                                            public_ip.name,
-                                            DependencyType.EXPLICIT,
-                                            "Azure API - Application Gateway public IP",
-                                        )
-                                        logger.debug(
-                                            f"Added public IP dependency: {app_gw.name} -> {public_ip.name}",
-                                        )
-                                        break
+                                    for public_ip in public_ips:
+                                        if public_ip.name == public_ip_name:
+                                            app_gw.add_dependency(
+                                                public_ip.name,
+                                                DependencyType.EXPLICIT,
+                                                "Azure API - Application Gateway public IP",
+                                            )
+                                            logger.debug(
+                                                f"Added public IP dependency: {app_gw.name} -> {public_ip.name}",
+                                            )
+                                            break
 
                     # Extract subnet relationships from gateway IP configurations
                     if (
@@ -2428,21 +2482,22 @@ class AzureClient:
                                 and gateway_ip_config.subnet
                             ):
                                 subnet_id = gateway_ip_config.subnet.id
-                                subnet_name = self._extract_resource_name_from_id(
-                                    subnet_id,
-                                )
+                                if subnet_id:
+                                    subnet_name = self._extract_resource_name_from_id(
+                                        subnet_id,
+                                    )
 
-                                for subnet in subnets:
-                                    if subnet.name == subnet_name:
-                                        app_gw.add_dependency(
-                                            subnet.name,
-                                            DependencyType.EXPLICIT,
-                                            "Azure API - Application Gateway subnet placement",
-                                        )
-                                        logger.debug(
-                                            f"Added subnet dependency: {app_gw.name} -> {subnet.name}",
-                                        )
-                                        break
+                                    for subnet in subnets:
+                                        if subnet.name == subnet_name:
+                                            app_gw.add_dependency(
+                                                subnet.name,
+                                                DependencyType.EXPLICIT,
+                                                "Azure API - Application Gateway subnet placement",
+                                            )
+                                            logger.debug(
+                                                f"Added subnet dependency: {app_gw.name} -> {subnet.name}",
+                                            )
+                                            break
 
                     # Set application gateway properties for better visualization
                     if app_gw.dependencies:
@@ -2461,7 +2516,9 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to discover Application Gateway relationships: {e}")
 
-    def _discover_vm_extension_relationships(self, resources: List[AzureResource]):
+    def _discover_vm_extension_relationships(
+        self, resources: List[AzureResource]
+    ) -> None:
         """Discover VM extension relationships to their parent VMs.
 
         Args:
@@ -2641,12 +2698,13 @@ class AzureClient:
                 return NetworkTopology()
 
             # Get topology information
+            topology_params = TopologyParameters(
+                target_resource_group_name=resource_group_name
+            )
             topology = self.network_client.network_watchers.get_topology(
                 resource_group_name=network_watcher["resource_group"],
                 network_watcher_name=network_watcher["name"],
-                parameters={
-                    "target_resource_group_name": resource_group_name,
-                },
+                parameters=topology_params,
             )
 
             return self._parse_network_topology(topology)
@@ -2668,15 +2726,16 @@ class AzureClient:
         try:
             for nw in self.network_client.network_watchers.list_all():
                 if (
-                    nw.location.replace(" ", "").lower()
+                    nw.location
+                    and nw.location.replace(" ", "").lower()
                     == location.replace(" ", "").lower()
                 ):
                     return {
-                        "name": nw.name,
-                        "resource_group": nw.id.split("/")[
-                            4
-                        ],  # Extract RG from resource ID
-                        "location": nw.location,
+                        "name": nw.name or "",
+                        "resource_group": nw.id.split("/")[4]
+                        if nw.id
+                        else "",  # Extract RG from resource ID
+                        "location": nw.location or "",
                     }
             return None
         except AzureError as e:
@@ -2823,7 +2882,7 @@ class AzureClient:
     def _discover_cross_resource_group_dependencies(
         self,
         resources: List[AzureResource],
-    ):
+    ) -> None:
         """Discover and include resources from other resource groups that are dependencies.
 
         Args:
@@ -3116,7 +3175,7 @@ class AzureClient:
             )
             return None
 
-    def _extract_openshift_dns_configuration(self, cluster: AzureResource):
+    def _extract_openshift_dns_configuration(self, cluster: AzureResource) -> None:
         """Extract DNS configuration from OpenShift cluster and store it in properties.
 
         Args:

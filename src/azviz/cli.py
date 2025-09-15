@@ -16,7 +16,7 @@ console = Console()
 
 
 # Configure logging
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False) -> None:
     """Setup logging with rich handler."""
     level = logging.INFO if verbose else logging.WARNING
     logging.basicConfig(
@@ -44,7 +44,7 @@ def setup_logging(verbose: bool = False):
 )
 @click.version_option()
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]):
+def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]) -> None:
     """Python AzViz - Azure resource topology visualization tool.
 
     Generate beautiful diagrams of your Azure infrastructure automatically.
@@ -169,7 +169,7 @@ def export(
     compute_only: bool,
     save_dot: bool,
     subscription: Optional[str],
-):
+) -> None:
     """Export Azure resource topology diagram.
 
     Generate a visual diagram showing Azure resources and their relationships
@@ -292,7 +292,7 @@ def export(
     help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
 )
 @click.pass_context
-def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
+def list_resource_groups(ctx: click.Context, subscription: Optional[str]) -> None:
     """List available Azure resource groups in subscription.
 
     \b
@@ -358,7 +358,7 @@ def preview_resources(
     ctx: click.Context,
     resource_group: Optional[str],
     subscription: Optional[str],
-):
+) -> None:
     """Preview resources in a resource group or all resource groups if none specified.
 
     \b
@@ -475,7 +475,7 @@ def preview_resources(
     help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
 )
 @click.pass_context
-def validate_prerequisites(ctx: click.Context, subscription: Optional[str]):
+def validate_prerequisites(ctx: click.Context, subscription: Optional[str]) -> None:
     """Validate prerequisites for diagram generation."""
     try:
         verbose_mode = ctx.obj.get("verbose", False)
@@ -562,7 +562,7 @@ def validate_prerequisites(ctx: click.Context, subscription: Optional[str]):
 
 
 @cli.command("info")
-def show_info():
+def show_info() -> None:
     """Show information about supported themes, formats, and options."""
     # Themes
     themes_table = Table(title="Supported Themes")
@@ -631,7 +631,7 @@ def show_info():
     console.print(layout_table)
 
 
-def main():
+def main() -> None:
     """Main entry point for CLI."""
     cli()
 
