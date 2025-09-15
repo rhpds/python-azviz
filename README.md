@@ -77,9 +77,9 @@ cd python-azviz
 pip install -r requirements.txt
 
 # Run directly using wrapper script
-python azviz.py --help
-python azviz.py export --resource-group my-rg
-python azviz.py list-rg
+python azviz_wrapper.py --help
+python azviz_wrapper.py export --resource-group my-rg
+python azviz_wrapper.py list-rg
 ```
 
 ### Option 3: Development Installation

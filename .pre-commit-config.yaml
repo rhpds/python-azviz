@@ -23,5 +23,5 @@ repos:
     rev: 'v2.14'
     hooks:
       - id: vulture
-        args: [--min-confidence=90, src/, azviz.py]
+        args: [--min-confidence=90, src/, azviz_wrapper.py]
         exclude: ^(examples/|tests/)

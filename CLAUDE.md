@@ -23,8 +23,8 @@ pip install -e .[dev]
 ### Running the Application
 ```bash
 # Direct execution from source
-python azviz.py --help
-python azviz.py export --resource-group my-rg
+python azviz_wrapper.py --help
+python azviz_wrapper.py export --resource-group my-rg
 
 # After installation
 python-azviz --help
@@ -48,10 +48,10 @@ python-azviz export --resource-group my-rg
 ### Code Quality Tools
 ```bash
 # Format code
-black src/ examples/ azviz.py
+black src/ examples/ azviz_wrapper.py
 
 # Lint code
-ruff check src/ examples/ azviz.py
+ruff check src/ examples/ azviz_wrapper.py
 
 # Type checking
 mypy src/azviz/
@@ -135,7 +135,7 @@ pytest --cov=azviz tests/
 
 ### Entry Points
 
-- `azviz.py` - Wrapper script for development usage
+- `azviz_wrapper.py` - Wrapper script for development usage
 - `src/azviz/cli.py:main()` - Primary CLI entry point
 - `python-azviz` command after installation
 
