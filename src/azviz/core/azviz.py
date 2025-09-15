@@ -31,7 +31,7 @@ class AzViz:
         icon_directory: Optional[Union[str, Path]] = None,
     ):
         """Initialize AzViz instance.
-        
+
         Args:
             subscription_identifier: Azure subscription ID or name. If None, uses first available.
             credential: Azure credential object. If None, uses DefaultAzureCredential.
@@ -42,7 +42,9 @@ class AzViz:
 
         # Verify Azure authentication
         if not self.azure_client.test_authentication():
-            raise RuntimeError("Azure authentication failed. Please run 'az login' or configure credentials.")
+            raise RuntimeError(
+                "Azure authentication failed. Please run 'az login' or configure credentials.",
+            )
 
         logger.info("AzViz initialized successfully")
 
@@ -125,7 +127,10 @@ class AzViz:
             logger.info(f"Discovering resources in resource group: {rg_name}")
 
             # Get resources
-            resources = self.azure_client.get_resources_in_group(rg_name, config.show_power_state)
+            resources = self.azure_client.get_resources_in_group(
+                rg_name,
+                config.show_power_state,
+            )
             all_resources.extend(resources)
 
             # Get network topology
@@ -140,13 +145,19 @@ class AzViz:
                 combined_topology.network_interfaces.extend(topology.network_interfaces)
                 combined_topology.public_ips.extend(topology.public_ips)
                 combined_topology.load_balancers.extend(topology.load_balancers)
-                combined_topology.network_security_groups.extend(topology.network_security_groups)
+                combined_topology.network_security_groups.extend(
+                    topology.network_security_groups,
+                )
                 combined_topology.associations.extend(topology.associations)
 
         if not all_resources:
-            raise ValueError(f"No resources found in resource groups: {resource_groups}")
+            raise ValueError(
+                f"No resources found in resource groups: {resource_groups}",
+            )
 
-        logger.info(f"Found {len(all_resources)} total resources across {len(resource_groups)} resource groups")
+        logger.info(
+            f"Found {len(all_resources)} total resources across {len(resource_groups)} resource groups",
+        )
 
         # Post-process cross-resource-group relationships (like DNS zones)
         self.azure_client._discover_dns_zone_relationships(all_resources)
@@ -185,7 +196,9 @@ class AzViz:
         # If no extension provided, add the correct one
         if not actual_extension:
             final_output_file = str(output_path_obj.with_suffix(expected_extension))
-            logger.info(f"Added extension for format: {output_file} -> {final_output_file}")
+            logger.info(
+                f"Added extension for format: {output_file} -> {final_output_file}",
+            )
         elif actual_extension != expected_extension:
             # Extension mismatch - fail with clear error
             raise ValueError(
@@ -206,7 +219,7 @@ class AzViz:
 
     def get_available_resource_groups(self) -> List[Dict[str, Any]]:
         """Get list of available resource groups in subscription.
-        
+
         Returns:
             List of resource group information dictionaries.
         """
@@ -214,10 +227,10 @@ class AzViz:
 
     def preview_resources(self, resource_group: str) -> List[AzureResource]:
         """Preview resources in a resource group without generating diagram.
-        
+
         Args:
             resource_group: Resource group name.
-            
+
         Returns:
             List of Azure resources.
         """
@@ -225,7 +238,7 @@ class AzViz:
 
     def validate_prerequisites(self) -> Dict[str, bool]:
         """Validate all prerequisites for diagram generation.
-        
+
         Returns:
             Dictionary with validation results.
         """
@@ -248,7 +261,7 @@ class AzViz:
 
     def get_supported_themes(self) -> List[str]:
         """Get list of supported visual themes.
-        
+
         Returns:
             List of theme names.
         """
@@ -256,7 +269,7 @@ class AzViz:
 
     def get_supported_formats(self) -> List[str]:
         """Get list of supported output formats.
-        
+
         Returns:
             List of format names.
         """
@@ -264,7 +277,7 @@ class AzViz:
 
     def get_icon_mappings(self) -> Dict[str, str]:
         """Get available Azure resource icon mappings.
-        
+
         Returns:
             Dictionary mapping resource types to icon filenames.
         """

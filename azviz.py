@@ -25,7 +25,9 @@ try:
 
 except ImportError as e:
     print(f"❌ Error importing azviz: {e}")
-    print("\n💡 Make sure you're running from the python-azviz directory and have installed dependencies:")
+    print(
+        "\n💡 Make sure you're running from the python-azviz directory and have installed dependencies:",
+    )
     print("   pip install -r requirements.txt")
     print("   # or")
     print("   pip install -e .")

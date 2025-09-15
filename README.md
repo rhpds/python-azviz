@@ -6,7 +6,7 @@ A modern Python implementation for automatically generating Azure resource topol
 
 Python AzViz generates visual diagrams of Azure Resource Groups and their dependencies by:
 - Discovering Azure resources using Azure Management APIs
-- Mapping resource relationships and dependencies  
+- Mapping resource relationships and dependencies
 - Creating graph visualizations using NetworkX and Graphviz
 - Supporting multiple themes and output formats
 
@@ -168,7 +168,7 @@ Python AzViz supports multiple authentication methods:
 
 ### Themes
 - `light`: Light background with dark text
-- `dark`: Dark background with light text  
+- `dark`: Dark background with light text
 - `neon`: High-contrast neon colors
 
 ### Output Formats

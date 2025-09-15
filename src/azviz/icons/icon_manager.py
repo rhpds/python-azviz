@@ -14,7 +14,7 @@ class IconManager:
 
     def __init__(self, icon_directory: Optional[Union[str, Path]] = None):
         """Initialize icon manager.
-        
+
         Args:
             icon_directory: Path to directory containing Azure service icons.
                           If None, uses package icons directory.
@@ -23,7 +23,9 @@ class IconManager:
             self.icon_directory = Path(icon_directory)
         else:
             # Use package icons directory
-            self.icon_directory = Path(__file__).parent / "azure_icons" / "General Service Icons"
+            self.icon_directory = (
+                Path(__file__).parent / "azure_icons" / "General Service Icons"
+            )
 
         # Simple icon mappings based on available icons from original AzViz
         self.icon_mappings = {
@@ -41,7 +43,6 @@ class IconManager:
             "microsoft.compute/galleries/images/versions": "VMImages.png",  # Gallery image versions
             "microsoft.web/sites": "functions.png",
             "microsoft.servicefabric/clusters": "servicefabric.png",
-
             # Networking Services
             "microsoft.network/virtualnetworks": "virtualnetworks.png",
             "microsoft.network/virtualnetworkgateways": "virtualnetworkgateways.png",
@@ -63,22 +64,18 @@ class IconManager:
             "microsoft.network/privatelinkservices": "Connections.png",  # Private Link services for connectivity
             "microsoft.network/virtualnetworks/subnets": "virtualnetworks.png",  # Subnets use VNet icon
             "internet/gateway": "FrontDoors.png",  # Internet uses Front Door icon
-
             # Storage Services
             "microsoft.storage/storageaccounts": "storageaccounts.png",
-
             # Database Services
             "microsoft.sql/servers": "sqlservers.png",
             "microsoft.documentdb/databaseaccounts": "cosmosdb.png",
             "microsoft.cache/redis": "redis.png",
             "microsoft.dbforpostgresql/flexibleservers": "sqlservers.png",  # PostgreSQL flexible servers
-
             # Container Services
             "microsoft.containerregistry/registries": "ContainerRegistries.png",
             "microsoft.containerinstance/containergroups": "containerinstances.png",
             "microsoft.containerservice/managedclusters": "KubernetesServices.png",
             "microsoft.redhatopenshift/openshiftclusters": "KubernetesServices.png",  # Azure Red Hat OpenShift
-
             # Analytics Services
             "microsoft.databricks/workspaces": "databricks.png",
             "microsoft.datafactory/factories": "DataFactories.png",
@@ -86,44 +83,39 @@ class IconManager:
             "microsoft.eventhub/clusters": "EventHubClusters.png",
             "microsoft.operationalinsights/workspaces": "LogAnalyticsWorkspaces.png",
             "microsoft.datalakeanalytics/accounts": "DataLakeAnalytics.png",
-
             # Security Services
             "microsoft.keyvault/vaults": "keyvaults.png",
-
             # Management and Governance
             "microsoft.automation/automationaccounts": "automation.png",
             "microsoft.resources/resourcegroups": "ResourceGroups.png",
             "microsoft.resources/subscriptions": "Subscriptions.png",
             "microsoft.resources/deploymentscripts": "automation.png",  # Deployment Scripts for automation tasks
-
             # Web Services
             "microsoft.web/serverfarms": "appservices.png",
             "microsoft.cdn/profiles": "cdnprofiles.png",
-
             # Monitoring and Diagnostics
             "microsoft.insights/components": "applicationinsights.png",
             "microsoft.operationsmanagement/solutions": "LogAnalyticsWorkspaces.png",  # Operations Management solutions like Container Insights
-
             # Integration Services
             "microsoft.web/connections": "APIConnections.png",
             "microsoft.media/mediaservices": "mediaservices.png",
             "microsoft.appconfiguration/configurationstores": "appconfiguration.png",
-
             # Solution Services
             "microsoft.solutions/applications": "solutions.png",
-
             # Identity Services
             "microsoft.managedidentity/userassignedidentities": "managedidentities.png",
         }
 
-        logger.info(f"IconManager initialized with {len(self.icon_mappings)} icon mappings")
+        logger.info(
+            f"IconManager initialized with {len(self.icon_mappings)} icon mappings",
+        )
 
     def get_icon_path(self, resource_type: str) -> Optional[Path]:
         """Get icon file path for Azure resource type.
-        
+
         Args:
             resource_type: Azure resource type (e.g., 'Microsoft.Compute/virtualMachines').
-            
+
         Returns:
             Path to icon file, or None if not found.
         """
@@ -146,7 +138,7 @@ class IconManager:
 
     def get_available_icons(self) -> Dict[str, str]:
         """Get all available icon mappings.
-        
+
         Returns:
             Dictionary of resource type to icon filename mappings.
         """
@@ -154,7 +146,7 @@ class IconManager:
 
     def add_custom_mapping(self, resource_type: str, icon_filename: str):
         """Add custom icon mapping.
-        
+
         Args:
             resource_type: Azure resource type.
             icon_filename: Icon filename.
@@ -164,10 +156,10 @@ class IconManager:
 
     def get_icon_data_url(self, resource_type: str) -> Optional[str]:
         """Get icon as base64 data URL for embedding in HTML.
-        
+
         Args:
             resource_type: Azure resource type (e.g., 'Microsoft.Compute/virtualMachines').
-            
+
         Returns:
             Base64 data URL string, or None if icon not found.
         """
@@ -192,7 +184,9 @@ class IconManager:
             # Create data URL
             data_url = f"data:{mime_type};base64,{base64_data}"
 
-            logger.debug(f"Generated data URL for {resource_type}: {len(data_url)} characters")
+            logger.debug(
+                f"Generated data URL for {resource_type}: {len(data_url)} characters",
+            )
             return data_url
 
         except Exception as e:

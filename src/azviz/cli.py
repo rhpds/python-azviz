@@ -14,6 +14,7 @@ from .core import AzViz, Direction, LabelVerbosity, OutputFormat, Splines, Theme
 # Setup rich console
 console = Console()
 
+
 # Configure logging
 def setup_logging(verbose: bool = False):
     """Setup logging with rich handler."""
@@ -28,31 +29,36 @@ def setup_logging(verbose: bool = False):
     # Suppress noisy Azure SDK logging even in verbose mode
     if verbose:
         # Keep our application logs at INFO, but quiet Azure SDK HTTP logs
-        logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+        logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+            logging.WARNING,
+        )
         logging.getLogger("azure.identity").setLevel(logging.WARNING)
 
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-@click.option("--subscription", "-s",
-              help="Azure subscription ID or name. If not specified, uses the first available subscription from your Azure credentials.")
+@click.option(
+    "--subscription",
+    "-s",
+    help="Azure subscription ID or name. If not specified, uses the first available subscription from your Azure credentials.",
+)
 @click.version_option()
 @click.pass_context
 def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]):
     """Python AzViz - Azure resource topology visualization tool.
-    
+
     Generate beautiful diagrams of your Azure infrastructure automatically.
-    
+
     \b
     Authentication:
     - Uses Azure CLI credentials by default (az login)
     - Supports service principal and managed identity
     - Use --subscription to target specific subscription by ID or name
-    
+
     \b
     Examples:
       python-azviz list-rg                    # List all resource groups
-      python-azviz preview                    # Preview all resources  
+      python-azviz preview                    # Preview all resources
       python-azviz preview my-rg              # Preview specific RG
       python-azviz export                     # Diagram all resource groups
       python-azviz export -g my-rg --theme dark
@@ -68,30 +74,84 @@ def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]):
 
 
 @cli.command()
-@click.option("--resource-group", "-g", multiple=True, required=False,
-              help="Azure resource group name(s) to visualize. Can be specified multiple times. If not specified, visualizes all resource groups in subscription.")
-@click.option("--output", "-o", default="azure-topology.png",
-              help="Output file path (default: azure-topology.png, will change extension based on format)")
-@click.option("--theme", "-t", type=click.Choice(["light", "dark", "neon"]), default="light",
-              help="Visual theme (default: light)")
-@click.option("--format", "-f", "output_format", type=click.Choice(["png", "svg", "html"]), default="png",
-              help="Output format (default: png)")
-@click.option("--verbosity", type=click.IntRange(1, 3), default=2,
-              help="Label verbosity level: 1=minimal, 2=standard, 3=detailed (default: 2)")
-@click.option("--depth", type=click.IntRange(1, 3), default=2,
-              help="Resource categorization depth (default: 2)")
-@click.option("--direction", type=click.Choice(["left-to-right", "top-to-bottom"]), default="left-to-right",
-              help="Graph layout direction (default: left-to-right)")
-@click.option("--splines", type=click.Choice(["polyline", "curved", "ortho", "line", "spline"]), default="polyline",
-              help="Edge appearance (default: polyline)")
-@click.option("--exclude", multiple=True,
-              help="Resource types to exclude (supports wildcards). Can be specified multiple times.")
-@click.option("--legend", is_flag=True, help="Enable legend in output (disabled by default)")
-@click.option("--no-power-state", is_flag=True, help="Disable VM power state visualization (enabled by default)")
-@click.option("--compute-only", is_flag=True, help="Show only compute resources and their directly related resources (VMs, disks, SSH keys, etc.)")
+@click.option(
+    "--resource-group",
+    "-g",
+    multiple=True,
+    required=False,
+    help="Azure resource group name(s) to visualize. Can be specified multiple times. If not specified, visualizes all resource groups in subscription.",
+)
+@click.option(
+    "--output",
+    "-o",
+    default="azure-topology.png",
+    help="Output file path (default: azure-topology.png, will change extension based on format)",
+)
+@click.option(
+    "--theme",
+    "-t",
+    type=click.Choice(["light", "dark", "neon"]),
+    default="light",
+    help="Visual theme (default: light)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["png", "svg", "html"]),
+    default="png",
+    help="Output format (default: png)",
+)
+@click.option(
+    "--verbosity",
+    type=click.IntRange(1, 3),
+    default=2,
+    help="Label verbosity level: 1=minimal, 2=standard, 3=detailed (default: 2)",
+)
+@click.option(
+    "--depth",
+    type=click.IntRange(1, 3),
+    default=2,
+    help="Resource categorization depth (default: 2)",
+)
+@click.option(
+    "--direction",
+    type=click.Choice(["left-to-right", "top-to-bottom"]),
+    default="left-to-right",
+    help="Graph layout direction (default: left-to-right)",
+)
+@click.option(
+    "--splines",
+    type=click.Choice(["polyline", "curved", "ortho", "line", "spline"]),
+    default="polyline",
+    help="Edge appearance (default: polyline)",
+)
+@click.option(
+    "--exclude",
+    multiple=True,
+    help="Resource types to exclude (supports wildcards). Can be specified multiple times.",
+)
+@click.option(
+    "--legend",
+    is_flag=True,
+    help="Enable legend in output (disabled by default)",
+)
+@click.option(
+    "--no-power-state",
+    is_flag=True,
+    help="Disable VM power state visualization (enabled by default)",
+)
+@click.option(
+    "--compute-only",
+    is_flag=True,
+    help="Show only compute resources and their directly related resources (VMs, disks, SSH keys, etc.)",
+)
 @click.option("--save-dot", is_flag=True, help="Save DOT source file alongside output")
-@click.option("--subscription", "-s",
-              help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.")
+@click.option(
+    "--subscription",
+    "-s",
+    help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
+)
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -111,11 +171,11 @@ def export(
     subscription: Optional[str],
 ):
     """Export Azure resource topology diagram.
-    
+
     Generate a visual diagram showing Azure resources and their relationships
     within the specified resource group(s). If no resource groups are specified,
     visualizes all resource groups in the subscription.
-    
+
     Examples:
       python-azviz export                                 # All resource groups in subscription
       python-azviz export -g my-resource-group            # Specific resource group
@@ -145,7 +205,10 @@ def export(
                 status_icon = "✅" if status else "❌"
                 console.print(f"  {status_icon} {name}")
             if not prereqs["graphviz"]:
-                console.print("\n💡 Install Graphviz: https://graphviz.org/download/", style="yellow")
+                console.print(
+                    "\n💡 Install Graphviz: https://graphviz.org/download/",
+                    style="yellow",
+                )
             sys.exit(1)
 
         # Handle resource group selection
@@ -155,14 +218,23 @@ def export(
         else:
             # Use all resource groups in subscription
             if verbose_mode:
-                console.print("🔍 No resource groups specified, using all in subscription...", style="blue")
+                console.print(
+                    "🔍 No resource groups specified, using all in subscription...",
+                    style="blue",
+                )
             all_rgs = azviz.get_available_resource_groups()
             if not all_rgs:
-                console.print("❌ No resource groups found in subscription.", style="red")
+                console.print(
+                    "❌ No resource groups found in subscription.",
+                    style="red",
+                )
                 sys.exit(1)
             target_resource_groups = [rg["name"] for rg in all_rgs]
             if verbose_mode:
-                console.print(f"📋 Found {len(target_resource_groups)} resource groups to visualize", style="blue")
+                console.print(
+                    f"📋 Found {len(target_resource_groups)} resource groups to visualize",
+                    style="blue",
+                )
 
         # Convert parameters to enum types
         theme_enum = Theme(theme)
@@ -182,7 +254,10 @@ def export(
 
         # Export diagram
         if verbose_mode:
-            console.print(f"🎨 Generating diagram for {len(target_resource_groups)} resource group(s)...", style="green")
+            console.print(
+                f"🎨 Generating diagram for {len(target_resource_groups)} resource group(s)...",
+                style="green",
+            )
 
         output_path = azviz.export_diagram(
             resource_group=target_resource_groups,
@@ -211,12 +286,15 @@ def export(
 
 
 @cli.command("list-rg")
-@click.option("--subscription", "-s",
-              help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.")
+@click.option(
+    "--subscription",
+    "-s",
+    help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
+)
 @click.pass_context
 def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
     """List available Azure resource groups in subscription.
-    
+
     \b
     Examples:
       python-azviz list-rg
@@ -245,7 +323,9 @@ def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
         table.add_column("Tags", style="green")
 
         for rg in resource_groups:
-            tags_str = ", ".join([f"{k}={v}" for k, v in (rg.get("tags") or {}).items()])
+            tags_str = ", ".join(
+                [f"{k}={v}" for k, v in (rg.get("tags") or {}).items()],
+            )
             table.add_row(
                 rg["name"],
                 rg["location"],
@@ -254,7 +334,10 @@ def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
 
         console.print(table)
         if verbose_mode:
-            console.print(f"\n📊 Total: {len(resource_groups)} resource groups", style="blue")
+            console.print(
+                f"\n📊 Total: {len(resource_groups)} resource groups",
+                style="blue",
+            )
 
     except Exception as e:
         console.print(f"❌ Error: {e}", style="red")
@@ -265,12 +348,19 @@ def list_resource_groups(ctx: click.Context, subscription: Optional[str]):
 
 @cli.command("preview")
 @click.argument("resource_group", required=False)
-@click.option("--subscription", "-s",
-              help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.")
+@click.option(
+    "--subscription",
+    "-s",
+    help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
+)
 @click.pass_context
-def preview_resources(ctx: click.Context, resource_group: Optional[str], subscription: Optional[str]):
+def preview_resources(
+    ctx: click.Context,
+    resource_group: Optional[str],
+    subscription: Optional[str],
+):
     """Preview resources in a resource group or all resource groups if none specified.
-    
+
     \b
     Examples:
       python-azviz preview my-resource-group    # Preview specific RG
@@ -286,12 +376,18 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
         if resource_group:
             # Preview specific resource group
             if verbose_mode:
-                console.print(f"🔄 Discovering resources in '{resource_group}'...", style="blue")
+                console.print(
+                    f"🔄 Discovering resources in '{resource_group}'...",
+                    style="blue",
+                )
 
             resources = azviz.preview_resources(resource_group)
 
             if not resources:
-                console.print(f"No resources found in resource group '{resource_group}'.", style="yellow")
+                console.print(
+                    f"No resources found in resource group '{resource_group}'.",
+                    style="yellow",
+                )
                 return
 
             # Create table for specific RG
@@ -316,13 +412,19 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
         else:
             # Preview all resource groups in subscription
             if verbose_mode:
-                console.print("🔄 Discovering all resources in subscription...", style="blue")
+                console.print(
+                    "🔄 Discovering all resources in subscription...",
+                    style="blue",
+                )
 
             # Get all resource groups
             resource_groups = azviz.get_available_resource_groups()
 
             if not resource_groups:
-                console.print("No resource groups found in subscription.", style="yellow")
+                console.print(
+                    "No resource groups found in subscription.",
+                    style="yellow",
+                )
                 return
 
             # Create table for all RGs
@@ -354,7 +456,10 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
 
             console.print(table)
             if verbose_mode:
-                console.print(f"\n📊 Total: {total_resources} resources across {len(resource_groups)} resource groups", style="blue")
+                console.print(
+                    f"\n📊 Total: {total_resources} resources across {len(resource_groups)} resource groups",
+                    style="blue",
+                )
 
     except Exception as e:
         console.print(f"❌ Error: {e}", style="red")
@@ -364,8 +469,11 @@ def preview_resources(ctx: click.Context, resource_group: Optional[str], subscri
 
 
 @cli.command("validate")
-@click.option("--subscription", "-s",
-              help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.")
+@click.option(
+    "--subscription",
+    "-s",
+    help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
+)
 @click.pass_context
 def validate_prerequisites(ctx: click.Context, subscription: Optional[str]):
     """Validate prerequisites for diagram generation."""
@@ -415,18 +523,36 @@ def validate_prerequisites(ctx: click.Context, subscription: Optional[str]):
         critical_failed = not prereqs.get("azure_auth") or not prereqs.get("graphviz")
 
         if all(prereqs.values()):
-            console.print("\n✅ All prerequisites validated successfully!", style="green bold")
+            console.print(
+                "\n✅ All prerequisites validated successfully!",
+                style="green bold",
+            )
         elif critical_failed:
-            console.print("\n❌ Critical prerequisites failed. Please address the issues above.", style="red")
+            console.print(
+                "\n❌ Critical prerequisites failed. Please address the issues above.",
+                style="red",
+            )
             if not prereqs.get("azure_auth"):
-                console.print("💡 Run 'az login' to authenticate with Azure", style="yellow")
+                console.print(
+                    "💡 Run 'az login' to authenticate with Azure",
+                    style="yellow",
+                )
             if not prereqs.get("graphviz"):
-                console.print("💡 Install Graphviz: https://graphviz.org/download/", style="yellow")
+                console.print(
+                    "💡 Install Graphviz: https://graphviz.org/download/",
+                    style="yellow",
+                )
             sys.exit(1)
         else:
-            console.print("\n⚠️  Core functionality ready, but some optional features missing.", style="yellow")
+            console.print(
+                "\n⚠️  Core functionality ready, but some optional features missing.",
+                style="yellow",
+            )
             if not prereqs.get("icons"):
-                console.print("💡 Icons enhance diagrams but are optional. See src/azviz/icons/azure_icons/README.md", style="yellow")
+                console.print(
+                    "💡 Icons enhance diagrams but are optional. See src/azviz/icons/azure_icons/README.md",
+                    style="yellow",
+                )
 
     except Exception as e:
         console.print(f"❌ Error: {e}", style="red")

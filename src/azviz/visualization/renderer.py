@@ -59,13 +59,13 @@ class GraphRenderer:
         engine: str = "dot",
     ) -> Path:
         """Render DOT content to specified format.
-        
+
         Args:
             dot_content: DOT language content.
             output_file: Output file path.
             output_format: Output format (PNG, SVG, or HTML).
             engine: Graphviz engine to use (dot, neato, fdp, sfdp, circo, twopi).
-            
+
         Returns:
             Path to the generated file.
         """
@@ -106,7 +106,10 @@ class GraphRenderer:
                     # Post-process SVG to embed icons as data URLs
                     svg_with_embedded_icons = self._embed_icons_in_svg(svg_content)
 
-                    html_content = self._generate_html_page(svg_with_embedded_icons, dot_content)
+                    html_content = self._generate_html_page(
+                        svg_with_embedded_icons,
+                        dot_content,
+                    )
 
                     # Write HTML file
                     output_path.write_text(html_content, encoding="utf-8")
@@ -134,12 +137,12 @@ class GraphRenderer:
         engine: str = "dot",
     ) -> bytes:
         """Render DOT content to bytes for in-memory usage.
-        
+
         Args:
             dot_content: DOT language content.
             output_format: Output format (PNG, SVG, or HTML).
             engine: Graphviz engine to use.
-            
+
         Returns:
             Rendered graph as bytes.
         """
@@ -157,7 +160,10 @@ class GraphRenderer:
                 # HTML
                 svg_content = graph.pipe(format="svg", encoding="utf-8")
                 svg_with_embedded_icons = self._embed_icons_in_svg(svg_content)
-                html_content = self._generate_html_page(svg_with_embedded_icons, dot_content)
+                html_content = self._generate_html_page(
+                    svg_with_embedded_icons,
+                    dot_content,
+                )
                 return html_content.encode("utf-8")
 
         except Exception as e:
@@ -165,10 +171,10 @@ class GraphRenderer:
 
     def validate_dot(self, dot_content: str) -> bool:
         """Validate DOT content syntax.
-        
+
         Args:
             dot_content: DOT language content to validate.
-            
+
         Returns:
             True if valid, False otherwise.
         """
@@ -184,7 +190,7 @@ class GraphRenderer:
 
     def get_available_engines(self) -> list[str]:
         """Get list of available Graphviz layout engines.
-        
+
         Returns:
             List of available engine names.
         """
@@ -199,11 +205,11 @@ class GraphRenderer:
 
     def save_dot_file(self, dot_content: str, output_file: str) -> Path:
         """Save DOT content to a .dot file.
-        
+
         Args:
             dot_content: DOT language content.
             output_file: Output file path.
-            
+
         Returns:
             Path to the saved DOT file.
         """
@@ -220,11 +226,11 @@ class GraphRenderer:
 
     def _generate_html_page(self, svg_content: str, dot_content: str) -> str:
         """Generate an interactive HTML page with the diagram.
-        
+
         Args:
             svg_content: The SVG content of the diagram.
             dot_content: The original DOT source code.
-            
+
         Returns:
             Complete HTML page content.
         """
@@ -599,20 +605,21 @@ class GraphRenderer:
 </html>"""
 
         # Escape the DOT content for HTML
-        escaped_dot = dot_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped_dot = (
+            dot_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
 
         return html_template.format(
             svg_content=svg_content,
             dot_content=escaped_dot,
         )
 
-
     def _embed_icons_in_svg(self, svg_content: str) -> str:
         """Post-process SVG to embed icons as data URLs.
-        
+
         Args:
             svg_content: Original SVG content with file paths.
-            
+
         Returns:
             SVG content with embedded icons as data URLs.
         """
@@ -621,6 +628,7 @@ class GraphRenderer:
 
         # Import icon manager
         from ..icons.icon_manager import IconManager
+
         icon_manager = IconManager()
 
         # Find all img src references in the SVG
@@ -631,7 +639,13 @@ class GraphRenderer:
 
             # Convert to Path object and check if it's an icon file
             path = Path(file_path)
-            if path.exists() and path.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".svg"]:
+            if path.exists() and path.suffix.lower() in [
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".svg",
+            ]:
                 try:
                     # Read the icon file as binary
                     with open(path, "rb") as icon_file:
@@ -639,6 +653,7 @@ class GraphRenderer:
 
                     # Get MIME type
                     import mimetypes
+
                     mime_type, _ = mimetypes.guess_type(str(path))
                     if not mime_type:
                         mime_type = "image/png"

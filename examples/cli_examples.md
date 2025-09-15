@@ -116,7 +116,7 @@ Example GitHub Actions workflow:
     pip install python-azviz
     az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
     python-azviz export --resource-group production-rg --output topology.png
-    
+
 - name: Upload diagram artifact
   uses: actions/upload-artifact@v3
   with:

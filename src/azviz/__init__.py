@@ -1,6 +1,6 @@
 """Python AzViz - Azure resource topology visualization tool.
 
-A Python port of the PowerShell AzViz module for automatically generating 
+A Python port of the PowerShell AzViz module for automatically generating
 Azure resource topology diagrams.
 """
 

@@ -60,7 +60,7 @@ python-azviz/
 
 - **`client.py`**: Azure SDK integration for resource discovery
   - Resource Management API
-  - Network Management API  
+  - Network Management API
   - Compute Management API (for VM power states)
   - Subscription Management API
 
@@ -79,7 +79,7 @@ python-azviz/
 
 ### CLI Features (`cli.py`)
 - `export` - Generate topology diagrams
-- `list-rg` - List available resource groups  
+- `list-rg` - List available resource groups
 - `preview` - Preview resources without generating diagrams
 - `validate` - Check prerequisites (Azure auth, Graphviz)
 - `info` - Show supported themes and formats

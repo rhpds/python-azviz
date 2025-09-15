@@ -75,7 +75,7 @@ pytest --cov=azviz tests/
    - Orchestrates Azure client, graph building, and rendering
    - Handles authentication and prerequisite validation
 
-2. **Azure Client** (`src/azviz/azure/client.py`) 
+2. **Azure Client** (`src/azviz/azure/client.py`)
    - Manages Azure API interactions using Azure SDK
    - Supports subscription targeting by name or ID with intelligent resolution
    - Discovers resources and network topology with comprehensive relationship mapping
@@ -130,7 +130,7 @@ pytest --cov=azviz tests/
 ### Output Formats
 
 - **PNG**: Raster image format, good for static viewing and embedding in documents
-- **SVG**: Vector format, scalable and good for web usage 
+- **SVG**: Vector format, scalable and good for web usage
 - **HTML**: Interactive web page with zoom, pan, drag, and source viewing capabilities
 
 ### Entry Points

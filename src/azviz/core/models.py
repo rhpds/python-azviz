@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 class Theme(str, Enum):
     """Visual themes for diagram generation."""
+
     LIGHT = "light"
     DARK = "dark"
     NEON = "neon"
@@ -16,6 +17,7 @@ class Theme(str, Enum):
 
 class OutputFormat(str, Enum):
     """Supported output formats."""
+
     PNG = "png"
     SVG = "svg"
     HTML = "html"
@@ -23,6 +25,7 @@ class OutputFormat(str, Enum):
 
 class LabelVerbosity(int, Enum):
     """Label verbosity levels."""
+
     MINIMAL = 1
     STANDARD = 2
     DETAILED = 3
@@ -30,12 +33,14 @@ class LabelVerbosity(int, Enum):
 
 class Direction(str, Enum):
     """Graph layout direction."""
+
     LEFT_TO_RIGHT = "left-to-right"
     TOP_TO_BOTTOM = "top-to-bottom"
 
 
 class Splines(str, Enum):
     """Edge appearance options."""
+
     POLYLINE = "polyline"
     CURVED = "curved"
     ORTHO = "ortho"
@@ -45,13 +50,15 @@ class Splines(str, Enum):
 
 class DependencyType(str, Enum):
     """Types of dependencies between resources."""
+
     EXPLICIT = "explicit"  # Direct Azure API relationship
-    DERIVED = "derived"   # Inferred from patterns/heuristics
+    DERIVED = "derived"  # Inferred from patterns/heuristics
 
 
 @dataclass
 class ResourceDependency:
     """Represents a dependency between Azure resources."""
+
     target_name: str
     dependency_type: DependencyType = DependencyType.EXPLICIT
     description: Optional[str] = None
@@ -60,6 +67,7 @@ class ResourceDependency:
 @dataclass
 class AzureResource:
     """Represents an Azure resource."""
+
     name: str
     resource_type: str
     category: str
@@ -70,7 +78,12 @@ class AzureResource:
     tags: Dict[str, str] = field(default_factory=dict)
     dependencies: List[Union[str, ResourceDependency]] = field(default_factory=list)
 
-    def add_dependency(self, target_name: str, dependency_type: DependencyType = DependencyType.EXPLICIT, description: Optional[str] = None):
+    def add_dependency(
+        self,
+        target_name: str,
+        dependency_type: DependencyType = DependencyType.EXPLICIT,
+        description: Optional[str] = None,
+    ):
         """Add a dependency with type information."""
         dependency = ResourceDependency(target_name, dependency_type, description)
         self.dependencies.append(dependency)
@@ -89,6 +102,7 @@ class AzureResource:
 @dataclass
 class NetworkTopology:
     """Network topology information."""
+
     virtual_networks: List[Dict[str, Any]] = field(default_factory=list)
     subnets: List[Dict[str, Any]] = field(default_factory=list)
     network_interfaces: List[Dict[str, Any]] = field(default_factory=list)
@@ -101,6 +115,7 @@ class NetworkTopology:
 @dataclass
 class GraphNode:
     """Graph node representation."""
+
     id: str
     name: str
     label: str
@@ -112,6 +127,7 @@ class GraphNode:
 @dataclass
 class GraphEdge:
     """Graph edge representation."""
+
     source: str
     target: str
     label: str = ""
@@ -122,6 +138,7 @@ class GraphEdge:
 @dataclass
 class ThemeConfig:
     """Theme configuration settings."""
+
     background_color: str
     node_color: str
     edge_color: str
@@ -132,6 +149,7 @@ class ThemeConfig:
 
 class ResourceRanking:
     """Resource ranking for layout priority."""
+
     RANKINGS = {
         "microsoft.network/dnszones": 1,  # DNS zones at top - provide naming for entire infrastructure
         "microsoft.network/privatednszones": 1,  # Private DNS zones at same level as public DNS
@@ -163,6 +181,7 @@ class ResourceRanking:
 
 class VisualizationConfig(BaseModel):
     """Configuration for visualization generation."""
+
     resource_groups: List[str]
     label_verbosity: LabelVerbosity = LabelVerbosity.STANDARD
     category_depth: int = 2
