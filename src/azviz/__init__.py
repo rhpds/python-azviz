@@ -7,5 +7,5 @@ Azure resource topology diagrams.
 from .core.azviz import AzViz
 from .core.models import Theme, OutputFormat, LabelVerbosity
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __all__ = ["AzViz", "Theme", "OutputFormat", "LabelVerbosity"]
