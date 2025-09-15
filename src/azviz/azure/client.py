@@ -435,11 +435,7 @@ class AzureClient:
                                 and vm_details.os_profile.linux_configuration.ssh
                                 and vm_details.os_profile.linux_configuration.ssh.public_keys
                             ):
-                                for (
-                                    public_key_config
-                                ) in (
-                                    vm_details.os_profile.linux_configuration.ssh.public_keys
-                                ):
+                                for public_key_config in vm_details.os_profile.linux_configuration.ssh.public_keys:
                                     if (
                                         public_key_config.key_data
                                         and public_key_config.key_data.strip()
