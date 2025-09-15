@@ -79,15 +79,6 @@ class AzureClient:
         except AzureError as e:
             raise ValueError(f"Failed to get Azure subscription: {e}") from e
 
-    def _get_subscription_name(self, subscription_id: str) -> str:
-        """Get subscription display name for a given subscription ID."""
-        try:
-            subscription_client = SubscriptionClient(self.credential)
-            subscription = subscription_client.subscriptions.get(subscription_id)
-            return subscription.display_name
-        except AzureError as e:
-            logger.warning(f"Failed to get subscription name for {subscription_id}: {e}")
-            return subscription_id  # Fallback to ID if name unavailable
 
     def _resolve_subscription_identifier(self, subscription_identifier: str) -> Tuple[str, str]:
         """Resolve subscription identifier (name or ID) to ID and name.
@@ -485,7 +476,7 @@ class AzureClient:
                         if (hasattr(identity_obj, "user_assigned_identities") and
                             identity_obj.user_assigned_identities):
 
-                            for identity_id, identity_info in identity_obj.user_assigned_identities.items():
+                            for identity_id, _ in identity_obj.user_assigned_identities.items():
                                 # Extract identity name from resource ID
                                 identity_name = self._extract_resource_name_from_id(identity_id)
 
@@ -2121,24 +2112,6 @@ class AzureClient:
             logger.warning(f"Error parsing external resource ID {resource_id}: {e}")
             return None
 
-    def _is_cross_tenant_error(self, error_message: str) -> bool:
-        """Check if an error message indicates a cross-tenant authentication issue.
-        
-        Args:
-            error_message: The error message to analyze.
-            
-        Returns:
-            True if this appears to be a cross-tenant authentication error.
-        """
-        cross_tenant_indicators = [
-            "InvalidAuthenticationTokenTenant",
-            "wrong issuer",
-            "does not match the tenant",
-            "transferred to another tenant",
-        ]
-
-        error_lower = error_message.lower()
-        return any(indicator.lower() in error_lower for indicator in cross_tenant_indicators)
 
     def _check_cross_tenant_resource(self, resource_id: str) -> bool:
         """Check if a resource is likely in a different tenant by comparing subscription IDs.

@@ -213,45 +213,6 @@ class DOTGenerator:
     {{rank="min"; "subscription_title";}}
 """
 
-    def _generate_subgraphs(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
-        """Generate subgraph definitions with hybrid layout.
-        
-        Args:
-            graph: NetworkX directed graph.
-            subgraphs: Dictionary of subgraph definitions.
-            
-        Returns:
-            DOT subgraph definitions with horizontal RGs and vertical resources.
-        """
-        subgraph_content = []
-
-        for subgraph_name, subgraph_data in subgraphs.items():
-            nodes = subgraph_data["nodes"]
-            label = subgraph_data.get("label", subgraph_name)
-            style = subgraph_data.get("style", "filled")
-            fillcolor = subgraph_data.get("fillcolor", "lightgray")
-
-            content = [f'    subgraph "{subgraph_name}" {{']
-            content.append(f'        label="{label}";')
-            content.append(f'        style="{style}";')
-            content.append(f'        fillcolor="{fillcolor}";')
-            content.append(f'        fontcolor="{self.theme.font_color}";')
-            content.append('        rankdir="TB";')  # Force top-to-bottom within this subgraph
-            content.append("")
-
-            # Add nodes in this subgraph
-            for node_id in nodes:
-                if node_id in graph.nodes:
-                    node_data = graph.nodes[node_id]
-                    node_def = self._format_node(node_id, node_data)
-                    content.append(f"        {node_def}")
-
-            content.append("    }")
-            content.append("")
-
-            subgraph_content.append("\n".join(content))
-
-        return "\n".join(subgraph_content)
 
     def _generate_subgraphs_with_container(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
         """Generate subgraphs wrapped in a master container for size constraint.
