@@ -173,6 +173,9 @@ cython_debug/
 !examples/*.png
 !examples/*.svg
 
+# Exception: Keep Azure service icons
+!src/azviz/icons/azure_icons/**/*.png
+
 # Temporary files
 *.tmp
 *.temp
