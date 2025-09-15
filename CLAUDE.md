@@ -141,7 +141,7 @@ pytest --cov=azviz tests/
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.9+
 - Graphviz installed on system
 - Azure authentication configured (az login, service principal, etc.)
 - Required Python packages in requirements.txt

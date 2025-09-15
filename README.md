@@ -44,7 +44,7 @@ The compute-only view filters 49 resources down to 21 focused on compute infrast
 ## Installation
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.9+
 - [Graphviz](https://graphviz.org/download/) installed on your system
 - Azure CLI or Azure credentials configured
 
