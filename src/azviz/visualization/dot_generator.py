@@ -488,6 +488,96 @@ class DOTGenerator:
                             f'<TR><TD align="right"><FONT POINT-SIZE="9">CIDR:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_prefix}</FONT></TD></TR>',
                         )
 
+            # Add enhanced information for our new features
+            # Properties are stored with 'prop_' prefix in node_data
+
+            # Enhanced VM information (size, OS, image)
+            if resource_type == "Microsoft.Compute/virtualMachines":
+                vm_size = node_data.get("prop_vm_size")
+                if vm_size:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{vm_size}</FONT></TD></TR>',
+                    )
+
+                os_type = node_data.get("prop_os_type")
+                if os_type:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">OS:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_type}</FONT></TD></TR>',
+                    )
+
+                # Build image info
+                image_offer = node_data.get("prop_image_offer")
+                image_sku = node_data.get("prop_image_sku")
+                if image_offer and image_sku:
+                    if "ubuntu" in image_offer.lower():
+                        image_info = f"Ubuntu {image_sku.replace('-LTS', '')}"
+                    elif "windows" in image_offer.lower():
+                        image_info = f"Windows {image_sku}"
+                    else:
+                        image_info = f"{image_offer} {image_sku}"
+
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Image:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{image_info}</FONT></TD></TR>',
+                    )
+
+            # Enhanced disk information (size, SKU, state)
+            if resource_type == "Microsoft.Compute/disks":
+                disk_size = node_data.get("prop_disk_size_gb")
+                sku_name = node_data.get("prop_sku_name")
+                if disk_size:
+                    size_display = f"{disk_size}GB"
+                    if sku_name:
+                        # Simplify SKU for display
+                        sku_simple = (
+                            sku_name.replace("_LRS", "")
+                            .replace("Standard", "Std")
+                            .replace("Premium", "Prem")
+                        )
+                        size_display += f" {sku_simple}"
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{size_display}</FONT></TD></TR>',
+                    )
+
+                disk_state = node_data.get("prop_disk_state")
+                if disk_state and disk_state != "Unattached":
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_state}</FONT></TD></TR>',
+                    )
+
+                os_type = node_data.get("prop_os_type")
+                if os_type:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">OS Type:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_type}</FONT></TD></TR>',
+                    )
+
+            # Enhanced storage account information (SKU, kind, tier)
+            if resource_type == "Microsoft.Storage/storageAccounts":
+                sku_name = node_data.get("prop_sku_name")
+                if sku_name:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku_name}</FONT></TD></TR>',
+                    )
+
+                kind = node_data.get("prop_kind")
+                if kind and kind != "StorageV2":
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Kind:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{kind}</FONT></TD></TR>',
+                    )
+
+                access_tier = node_data.get("prop_access_tier")
+                if access_tier:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Tier:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{access_tier}</FONT></TD></TR>',
+                    )
+
+            # Enhanced public IP information (show IP address)
+            if resource_type == "Microsoft.Network/publicIPAddresses":
+                ip_address = node_data.get("prop_ipAddress")
+                if ip_address:
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9"><B>{ip_address}</B></FONT></TD></TR>',
+                    )
+
             type_display = "".join(type_display_parts)
 
             # Use appropriate background color based on theme and cross-tenant status

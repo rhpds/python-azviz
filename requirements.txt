@@ -4,6 +4,7 @@ azure-mgmt-core>=1.4.0
 azure-mgmt-resource>=23.0.0
 azure-mgmt-network>=25.0.0
 azure-mgmt-compute>=30.0.0
+azure-mgmt-storage>=21.0.0
 azure-mgmt-subscription>=3.1.1
 
 # Graph and visualization

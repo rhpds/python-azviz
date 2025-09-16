@@ -326,6 +326,7 @@ class GraphBuilder:
             resource_names,
             resources[0].category,
             group_key,
+            None,
         )
 
         return GraphNode(
@@ -361,6 +362,7 @@ class GraphBuilder:
             [resource.name],
             resource.category,
             resource.resource_type,
+            resource,
         )
 
         # Include power state for VMs if available
@@ -408,6 +410,7 @@ class GraphBuilder:
         resource_names: List[str],
         category: str,
         resource_type: Optional[str] = None,
+        resource: Optional[AzureResource] = None,
     ) -> str:
         """Build node label based on verbosity settings.
 
@@ -416,6 +419,7 @@ class GraphBuilder:
             resource_names: List of resource names.
             category: Resource category.
             resource_type: Optional resource type for specialized labeling.
+            resource: Optional Azure resource for accessing properties.
 
         Returns:
             Formatted label string.
@@ -428,6 +432,183 @@ class GraphBuilder:
                 return f"{name}\\n(SSH Public Key)"
             # DETAILED
             return f"{name}\\n(SSH Public Key)\\nAuthentication Credential"
+
+        # Special handling for Public IP addresses - show IP address in label
+        if (
+            resource_type
+            and resource_type.lower() == "microsoft.network/publicipaddresses"
+        ):
+            ip_address = None
+            if resource and resource.properties:
+                ip_address = resource.properties.get("ipAddress")
+
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return ip_address if ip_address else name
+            if self.config.label_verbosity == LabelVerbosity.STANDARD:
+                if ip_address:
+                    return f"{name}\\n{ip_address}"
+                return f"{name}\\n(Public IP)"
+            # DETAILED
+            if ip_address:
+                return f"{name}\\n{ip_address}\\n(Public IP Address)"
+            return f"{name}\\n(Public IP Address)\\nExternal Connectivity"
+
+        # Special handling for Subnet resources - show CIDR in label
+        if (
+            resource_type
+            and resource_type.lower() == "microsoft.network/virtualnetworks/subnets"
+        ):
+            cidr_block = None
+            if resource and resource.properties:
+                cidr_block = resource.properties.get("address_prefix")
+
+            # Extract just the subnet name from the full name (e.g., "vnet1/subnet1" -> "subnet1")
+            display_name = name.split("/")[-1] if "/" in name else name
+
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                return cidr_block if cidr_block else display_name
+            if self.config.label_verbosity == LabelVerbosity.STANDARD:
+                if cidr_block:
+                    return f"{display_name}\\n{cidr_block}"
+                return f"{display_name}\\n(Subnet)"
+            # DETAILED
+            if cidr_block:
+                return f"{display_name}\\n{cidr_block}\\n(Subnet)"
+            return f"{display_name}\\n(Subnet)\\nNetwork Segment"
+
+        # Special handling for Virtual Machine resources - show size, OS type, and image
+        if (
+            resource_type
+            and resource_type.lower() == "microsoft.compute/virtualmachines"
+        ):
+            vm_size = None
+            os_type = None
+            image_info = None
+
+            if resource and resource.properties:
+                vm_size = resource.properties.get("vm_size")
+                os_type = resource.properties.get("os_type")
+
+                # Build image info from available components
+                image_offer = resource.properties.get("image_offer")
+                image_sku = resource.properties.get("image_sku")
+
+                if image_offer and image_sku:
+                    # Create a concise image description
+                    if "ubuntu" in image_offer.lower():
+                        image_info = f"Ubuntu {image_sku.replace('-LTS', '')}"
+                    elif "windows" in image_offer.lower():
+                        image_info = f"Windows {image_sku}"
+                    else:
+                        image_info = f"{image_offer} {image_sku}"
+
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                if vm_size:
+                    return f"{name}\\n{vm_size}"
+                return name
+            if self.config.label_verbosity == LabelVerbosity.STANDARD:
+                lines = [name]
+                if vm_size:
+                    lines.append(vm_size)
+                if os_type:
+                    lines.append(f"({os_type})")
+                return "\\n".join(lines)
+            # DETAILED
+            lines = [name]
+            if vm_size:
+                lines.append(vm_size)
+            if os_type and image_info:
+                lines.append(f"{os_type}: {image_info}")
+            elif os_type:
+                lines.append(f"({os_type})")
+            elif image_info:
+                lines.append(image_info)
+            return "\\n".join(lines)
+
+        # Special handling for Managed Disk resources - show size, SKU, and state
+        if resource_type and resource_type.lower() == "microsoft.compute/disks":
+            disk_size = None
+            sku_name = None
+            disk_state = None
+            os_type = None
+
+            if resource and resource.properties:
+                disk_size = resource.properties.get("disk_size_gb")
+                sku_name = resource.properties.get("sku_name")
+                disk_state = resource.properties.get("disk_state")
+                os_type = resource.properties.get("os_type")
+
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                if disk_size:
+                    return f"{name}\\n{disk_size}GB"
+                return name
+            if self.config.label_verbosity == LabelVerbosity.STANDARD:
+                lines = [name]
+                if disk_size and sku_name:
+                    # Simplify SKU names for display
+                    sku_display = (
+                        sku_name.replace("_LRS", "")
+                        .replace("Standard", "Std")
+                        .replace("Premium", "Prem")
+                    )
+                    lines.append(f"{disk_size}GB {sku_display}")
+                elif disk_size:
+                    lines.append(f"{disk_size}GB")
+                if disk_state and disk_state != "Unattached":
+                    lines.append(f"({disk_state})")
+                return "\\n".join(lines)
+            # DETAILED
+            lines = [name]
+            if disk_size and sku_name:
+                lines.append(f"{disk_size}GB {sku_name}")
+            elif disk_size:
+                lines.append(f"{disk_size}GB")
+            if os_type:
+                lines.append(f"OS: {os_type}")
+            elif disk_state:
+                lines.append(f"State: {disk_state}")
+            return "\\n".join(lines)
+
+        # Special handling for Storage Account resources - show SKU, kind, and tier
+        if (
+            resource_type
+            and resource_type.lower() == "microsoft.storage/storageaccounts"
+        ):
+            sku_name = None
+            kind = None
+            access_tier = None
+
+            if resource and resource.properties:
+                sku_name = resource.properties.get("sku_name")
+                kind = resource.properties.get("kind")
+                access_tier = resource.properties.get("access_tier")
+
+            if self.config.label_verbosity == LabelVerbosity.MINIMAL:
+                if sku_name:
+                    # Simplify SKU for minimal view
+                    sku_display = (
+                        sku_name.replace("_LRS", "")
+                        .replace("Standard", "Std")
+                        .replace("Premium", "Prem")
+                    )
+                    return f"{name}\\n{sku_display}"
+                return name
+            if self.config.label_verbosity == LabelVerbosity.STANDARD:
+                lines = [name]
+                if sku_name:
+                    lines.append(sku_name)
+                if kind and kind != "StorageV2":
+                    lines.append(f"({kind})")
+                return "\\n".join(lines)
+            # DETAILED
+            lines = [name]
+            if sku_name:
+                lines.append(sku_name)
+            if kind:
+                lines.append(f"Type: {kind}")
+            if access_tier:
+                lines.append(f"Tier: {access_tier}")
+            return "\\n".join(lines)
 
         # Special handling for Azure Compute Gallery resources
         if resource_type and resource_type.lower() == "microsoft.compute/galleries":
@@ -1149,6 +1330,26 @@ class GraphBuilder:
                     "access_note",
                     "tenant_note",
                     "hide_provider",
+                    # Enhanced VM properties
+                    "vm_size",
+                    "os_type",
+                    "image_offer",
+                    "image_sku",
+                    "image_publisher",
+                    # Enhanced disk properties
+                    "disk_size_gb",
+                    "sku_name",
+                    "disk_state",
+                    "create_option",
+                    # Enhanced storage account properties
+                    "sku_tier",
+                    "kind",
+                    "access_tier",
+                    "https_only",
+                    # Enhanced network properties
+                    "ipAddress",
+                    "allocation_method",
+                    "address_prefix",
                 }
 
                 for prop_key, prop_value in node.attributes["properties"].items():

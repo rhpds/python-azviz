@@ -14,6 +14,7 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.network.models import TopologyParameters
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.subscription import SubscriptionClient
 
 from ..core.models import (
@@ -60,6 +61,10 @@ class AzureClient:
             subscription_id=self.subscription_id,
         )
         self.compute_client = ComputeManagementClient(
+            credential=self.credential,
+            subscription_id=self.subscription_id,
+        )
+        self.storage_client = StorageManagementClient(
             credential=self.credential,
             subscription_id=self.subscription_id,
         )
@@ -262,6 +267,9 @@ class AzureClient:
                 )
                 resources.append(azure_resource)
 
+            # Extract detailed properties for enhanced features
+            self._extract_enhanced_properties(resources)
+
             # Discover VM-disk relationships
             self._discover_vm_disk_relationships(resources)
 
@@ -332,6 +340,148 @@ class AzureClient:
             )
             raise
 
+    def _extract_enhanced_properties(self, resources: List[AzureResource]) -> None:
+        """Extract detailed properties for enhanced features (VMs, disks, storage, network).
+
+        Args:
+            resources: List of Azure resources to analyze.
+        """
+        try:
+            # Extract properties for managed disks
+            disks = [
+                r for r in resources if r.resource_type == "Microsoft.Compute/disks"
+            ]
+
+            for disk in disks:
+                try:
+                    disk_details = self.compute_client.disks.get(
+                        disk.resource_group,
+                        disk.name,
+                    )
+
+                    # Extract disk properties
+                    if disk_details.sku and disk_details.sku.name:
+                        disk.properties["sku_name"] = disk_details.sku.name
+
+                    if disk_details.disk_size_gb:
+                        disk.properties["disk_size_gb"] = disk_details.disk_size_gb
+
+                    if disk_details.disk_state:
+                        disk.properties["disk_state"] = disk_details.disk_state
+
+                    if disk_details.os_type:
+                        disk.properties["os_type"] = disk_details.os_type
+
+                    if (
+                        disk_details.creation_data
+                        and disk_details.creation_data.create_option
+                    ):
+                        disk.properties["create_option"] = (
+                            disk_details.creation_data.create_option
+                        )
+
+                    logger.debug(
+                        f"Extracted disk properties for {disk.name}: "
+                        f"size={disk_details.disk_size_gb}GB, "
+                        f"sku={disk_details.sku.name if disk_details.sku else 'unknown'}, "
+                        f"state={disk_details.disk_state}"
+                    )
+
+                except AzureError as e:
+                    logger.debug(f"Could not get details for disk '{disk.name}': {e}")
+
+            # Extract properties for storage accounts
+            storage_accounts = [
+                r
+                for r in resources
+                if r.resource_type == "Microsoft.Storage/storageAccounts"
+            ]
+
+            for storage_account in storage_accounts:
+                try:
+                    storage_details = (
+                        self.storage_client.storage_accounts.get_properties(
+                            storage_account.resource_group,
+                            storage_account.name,
+                        )
+                    )
+
+                    # Extract storage account properties
+                    if storage_details.sku and storage_details.sku.name:
+                        storage_account.properties["sku_name"] = (
+                            storage_details.sku.name
+                        )
+
+                    if storage_details.sku and storage_details.sku.tier:
+                        storage_account.properties["sku_tier"] = (
+                            storage_details.sku.tier
+                        )
+
+                    if storage_details.kind:
+                        storage_account.properties["kind"] = storage_details.kind
+
+                    if storage_details.access_tier:
+                        storage_account.properties["access_tier"] = (
+                            storage_details.access_tier
+                        )
+
+                    if storage_details.enable_https_traffic_only is not None:
+                        storage_account.properties["https_only"] = (
+                            storage_details.enable_https_traffic_only
+                        )
+
+                    logger.debug(
+                        f"Extracted storage account properties for {storage_account.name}: "
+                        f"sku={storage_details.sku.name if storage_details.sku else 'unknown'}, "
+                        f"kind={storage_details.kind}, "
+                        f"tier={storage_details.access_tier}"
+                    )
+
+                except AzureError as e:
+                    logger.debug(
+                        f"Could not get details for storage account '{storage_account.name}': {e}"
+                    )
+
+            # Extract properties for public IP addresses
+            public_ips = [
+                r
+                for r in resources
+                if r.resource_type == "Microsoft.Network/publicIPAddresses"
+            ]
+
+            for public_ip in public_ips:
+                try:
+                    pip_details = self.network_client.public_ip_addresses.get(
+                        public_ip.resource_group,
+                        public_ip.name,
+                    )
+
+                    # Extract public IP properties
+                    if pip_details.ip_address:
+                        public_ip.properties["ipAddress"] = pip_details.ip_address
+
+                    if pip_details.public_ip_allocation_method:
+                        public_ip.properties["allocation_method"] = (
+                            pip_details.public_ip_allocation_method
+                        )
+
+                    if pip_details.sku and pip_details.sku.name:
+                        public_ip.properties["sku_name"] = pip_details.sku.name
+
+                    logger.debug(
+                        f"Extracted public IP properties for {public_ip.name}: "
+                        f"ip={pip_details.ip_address}, "
+                        f"allocation={pip_details.public_ip_allocation_method}"
+                    )
+
+                except AzureError as e:
+                    logger.debug(
+                        f"Could not get details for public IP '{public_ip.name}': {e}"
+                    )
+
+        except AzureError as e:
+            logger.warning(f"Failed to extract enhanced properties: {e}")
+
     def _discover_vm_disk_relationships(self, resources: List[AzureResource]) -> None:
         """Discover VM-disk relationships and add dependencies.
 
@@ -358,6 +508,33 @@ class AzureClient:
                         vm.name,
                         expand="instanceView",
                     )
+
+                    # Extract VM size, OS type, and image information
+                    if (
+                        vm_details.hardware_profile
+                        and vm_details.hardware_profile.vm_size
+                    ):
+                        vm.properties["vm_size"] = vm_details.hardware_profile.vm_size
+
+                    if vm_details.storage_profile:
+                        # Extract OS type
+                        if (
+                            vm_details.storage_profile.os_disk
+                            and vm_details.storage_profile.os_disk.os_type
+                        ):
+                            vm.properties["os_type"] = (
+                                vm_details.storage_profile.os_disk.os_type
+                            )
+
+                        # Extract image information
+                        if vm_details.storage_profile.image_reference:
+                            image_ref = vm_details.storage_profile.image_reference
+                            if image_ref.offer:
+                                vm.properties["image_offer"] = image_ref.offer
+                            if image_ref.sku:
+                                vm.properties["image_sku"] = image_ref.sku
+                            if image_ref.publisher:
+                                vm.properties["image_publisher"] = image_ref.publisher
 
                     # Get attached disks from storage profile
                     attached_disk_names = set()
