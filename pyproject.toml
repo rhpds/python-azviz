@@ -32,6 +32,7 @@ dependencies = [
     "azure-mgmt-resource>=23.0.0",
     "azure-mgmt-network>=25.0.0",
     "azure-mgmt-compute>=30.0.0",
+    "azure-mgmt-storage>=21.0.0",
     "azure-mgmt-subscription>=3.1.1",
     "networkx>=3.0",
     "graphviz>=0.20.0",
