@@ -62,7 +62,7 @@ class IconManager:
             "microsoft.network/privatednszones/virtualnetworklinks": "Connections.png",  # VNet links for DNS connectivity
             "microsoft.network/privateendpoints": "Connections.png",  # Private endpoints for connectivity
             "microsoft.network/privatelinkservices": "Connections.png",  # Private Link services for connectivity
-            "microsoft.network/virtualnetworks/subnets": "virtualnetworks.png",  # Subnets use VNet icon
+            "microsoft.network/virtualnetworks/subnets": "subnets.png",  # Use actual subnet icon
             "internet/gateway": "FrontDoors.png",  # Internet uses Front Door icon
             # Storage Services
             "microsoft.storage/storageaccounts": "storageaccounts.png",

@@ -238,22 +238,50 @@ class AzureClient:
         """
         try:
             resources = []
-            for resource in self.resource_client.resources.list_by_resource_group(
-                resource_group_name,
-            ):
-                # Get additional properties for VMs (including power state)
+            for resource in self.resource_client.resources.list_by_resource_group(resource_group_name):
+                # Get additional properties for compute resources
                 properties = resource.properties or {}
-                if (
-                    show_power_state
-                    and resource.type == "Microsoft.Compute/virtualMachines"
-                ):
-                    vm_power_state = self._get_vm_power_state(
-                        resource_group_name,
-                        resource.name,
-                    )
-                    if vm_power_state:
-                        properties["power_state"] = vm_power_state
 
+                # Enhance VM properties
+                if show_power_state and resource.type == 'Microsoft.Compute/virtualMachines':
+                    vm_power_state = self._get_vm_power_state(resource_group_name, resource.name)
+                    if vm_power_state:
+                        properties['power_state'] = vm_power_state
+
+                    # Get detailed VM properties
+                    vm_details = self._get_vm_details(resource_group_name, resource.name)
+                    if vm_details:
+                        properties.update(vm_details)
+
+                # Enhance disk properties
+                elif resource.type == 'Microsoft.Compute/disks':
+                    disk_details = self._get_disk_details(resource_group_name, resource.name)
+                    if disk_details:
+                        properties.update(disk_details)
+
+                # Enhance storage account properties
+                elif resource.type == 'Microsoft.Storage/storageAccounts':
+                    storage_details = self._get_storage_details(resource_group_name, resource.name)
+                    if storage_details:
+                        properties.update(storage_details)
+
+                # Enhance network interface properties
+                elif resource.type == 'Microsoft.Network/networkInterfaces':
+                    nic_details = self._get_nic_details(resource_group_name, resource.name)
+                    if nic_details:
+                        properties.update(nic_details)
+
+                # Enhance public IP properties
+                elif resource.type == 'Microsoft.Network/publicIPAddresses':
+                    pip_details = self._get_public_ip_details(resource_group_name, resource.name)
+                    if pip_details:
+                        properties.update(pip_details)
+
+                # Enhance virtual network properties
+                elif resource.type == 'Microsoft.Network/virtualNetworks':
+                    vnet_details = self._get_vnet_details(resource_group_name, resource.name)
+                    if vnet_details:
+                        properties.update(vnet_details)
                 azure_resource = AzureResource(
                     name=resource.name,
                     resource_type=resource.type,
@@ -3479,6 +3507,306 @@ class AzureClient:
                 f"Failed to extract OpenShift DNS configuration for {cluster.name}: {e}",
             )
         except Exception as e:
-            logger.warning(
-                f"Error extracting OpenShift DNS configuration for {cluster.name}: {e}",
+            logger.warning(f"Error extracting OpenShift DNS configuration for {cluster.name}: {e}")
+
+    def _get_vm_details(self, resource_group_name: str, vm_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed VM properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            vm_name: Virtual machine name.
+
+        Returns:
+            Dictionary of VM details or None if unavailable.
+        """
+        try:
+            vm = self.compute_client.virtual_machines.get(
+                resource_group_name=resource_group_name,
+                vm_name=vm_name
             )
+
+            details = {}
+
+            # VM size and hardware configuration
+            if vm.hardware_profile and vm.hardware_profile.vm_size:
+                details['vm_size'] = vm.hardware_profile.vm_size
+
+            # OS information
+            if vm.os_profile:
+                if vm.os_profile.computer_name:
+                    details['computer_name'] = vm.os_profile.computer_name
+                if vm.os_profile.admin_username:
+                    details['admin_username'] = vm.os_profile.admin_username
+
+            # Storage profile
+            if vm.storage_profile:
+                if vm.storage_profile.image_reference:
+                    image_ref = vm.storage_profile.image_reference
+                    if image_ref.publisher:
+                        details['os_publisher'] = image_ref.publisher
+                    if image_ref.offer:
+                        details['os_offer'] = image_ref.offer
+                    if image_ref.sku:
+                        details['os_sku'] = image_ref.sku
+
+                if vm.storage_profile.os_disk:
+                    os_disk = vm.storage_profile.os_disk
+                    if os_disk.os_type:
+                        details['os_type'] = str(os_disk.os_type)
+                    if os_disk.disk_size_gb:
+                        details['os_disk_size_gb'] = os_disk.disk_size_gb
+
+            # Network profile
+            if vm.network_profile and vm.network_profile.network_interfaces:
+                details['network_interface_count'] = len(vm.network_profile.network_interfaces)
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get VM details for {vm_name}: {e}")
+            return None
+
+    def _get_disk_details(self, resource_group_name: str, disk_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed disk properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            disk_name: Disk name.
+
+        Returns:
+            Dictionary of disk details or None if unavailable.
+        """
+        try:
+            disk = self.compute_client.disks.get(
+                resource_group_name=resource_group_name,
+                disk_name=disk_name
+            )
+
+            details = {}
+
+            # Disk size and type
+            if disk.disk_size_gb:
+                details['disk_size_gb'] = disk.disk_size_gb
+            if disk.sku and disk.sku.name:
+                details['sku'] = disk.sku.name
+            if disk.disk_state:
+                details['disk_state'] = str(disk.disk_state)
+            if disk.os_type:
+                details['os_type'] = str(disk.os_type)
+
+            # Performance tier
+            if disk.tier:
+                details['performance_tier'] = disk.tier
+
+            # Encryption
+            if disk.encryption_settings_collection:
+                details['encryption_enabled'] = True
+            else:
+                details['encryption_enabled'] = False
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get disk details for {disk_name}: {e}")
+            return None
+
+    def _get_storage_details(self, resource_group_name: str, storage_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed storage account properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            storage_name: Storage account name.
+
+        Returns:
+            Dictionary of storage details or None if unavailable.
+        """
+        try:
+            from azure.mgmt.storage import StorageManagementClient
+            storage_client = StorageManagementClient(
+                credential=self.credential,
+                subscription_id=self.subscription_id
+            )
+
+            storage = storage_client.storage_accounts.get_properties(
+                resource_group_name=resource_group_name,
+                account_name=storage_name
+            )
+
+            details = {}
+
+            # Account type and replication
+            if storage.sku and storage.sku.name:
+                details['sku'] = storage.sku.name
+            if storage.kind:
+                details['kind'] = str(storage.kind)
+            if storage.access_tier:
+                details['access_tier'] = str(storage.access_tier)
+
+            # Performance and redundancy
+            if storage.sku and storage.sku.tier:
+                details['performance_tier'] = str(storage.sku.tier)
+
+            # Security features
+            if storage.enable_https_traffic_only is not None:
+                details['https_only'] = storage.enable_https_traffic_only
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get storage details for {storage_name}: {e}")
+            return None
+
+    def _get_nic_details(self, resource_group_name: str, nic_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed network interface properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            nic_name: Network interface name.
+
+        Returns:
+            Dictionary of NIC details or None if unavailable.
+        """
+        try:
+            nic = self.network_client.network_interfaces.get(
+                resource_group_name=resource_group_name,
+                network_interface_name=nic_name
+            )
+
+            details = {}
+
+            # Primary IP configuration
+            if nic.ip_configurations:
+                primary_ip_config = nic.ip_configurations[0]
+                if primary_ip_config.private_ip_address:
+                    details['private_ip'] = primary_ip_config.private_ip_address
+                if primary_ip_config.private_ip_allocation_method:
+                    details['ip_allocation'] = str(primary_ip_config.private_ip_allocation_method)
+
+                # Associated public IP
+                if primary_ip_config.public_ip_address:
+                    public_ip_id = primary_ip_config.public_ip_address.id
+                    if public_ip_id:
+                        details['has_public_ip'] = True
+                        # Extract public IP name from ID
+                        public_ip_name = public_ip_id.split('/')[-1]
+                        details['public_ip_name'] = public_ip_name
+
+                # Associated subnet
+                if primary_ip_config.subnet:
+                    subnet_id = primary_ip_config.subnet.id
+                    if subnet_id:
+                        subnet_name = subnet_id.split('/')[-1]
+                        vnet_name = subnet_id.split('/')[-3]
+                        details['subnet_name'] = subnet_name
+                        details['vnet_name'] = vnet_name
+
+            # Network security group
+            if nic.network_security_group:
+                nsg_id = nic.network_security_group.id
+                if nsg_id:
+                    nsg_name = nsg_id.split('/')[-1]
+                    details['nsg_name'] = nsg_name
+
+            # Enable accelerated networking
+            if nic.enable_accelerated_networking is not None:
+                details['accelerated_networking'] = nic.enable_accelerated_networking
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get NIC details for {nic_name}: {e}")
+            return None
+
+    def _get_public_ip_details(self, resource_group_name: str, pip_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed public IP properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            pip_name: Public IP name.
+
+        Returns:
+            Dictionary of public IP details or None if unavailable.
+        """
+        try:
+            pip = self.network_client.public_ip_addresses.get(
+                resource_group_name=resource_group_name,
+                public_ip_address_name=pip_name
+            )
+
+            details = {}
+
+            # IP address and allocation
+            if pip.ip_address:
+                details['ip_address'] = pip.ip_address
+            if pip.public_ip_allocation_method:
+                details['allocation_method'] = str(pip.public_ip_allocation_method)
+
+            # SKU information
+            if pip.sku and pip.sku.name:
+                details['sku'] = pip.sku.name
+
+            # DNS settings
+            if pip.dns_settings:
+                if pip.dns_settings.domain_name_label:
+                    details['dns_label'] = pip.dns_settings.domain_name_label
+                if pip.dns_settings.fqdn:
+                    details['fqdn'] = pip.dns_settings.fqdn
+
+            # Associated resource
+            if pip.ip_configuration:
+                ip_config_id = pip.ip_configuration.id
+                if ip_config_id:
+                    # Extract associated resource info from IP configuration ID
+                    id_parts = ip_config_id.split('/')
+                    if len(id_parts) >= 9:
+                        resource_type = f"{id_parts[6]}/{id_parts[7]}"
+                        resource_name = id_parts[8]
+                        details['associated_resource'] = f"{resource_name} ({resource_type})"
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get public IP details for {pip_name}: {e}")
+            return None
+
+    def _get_vnet_details(self, resource_group_name: str, vnet_name: str) -> Optional[Dict[str, Any]]:
+        """Get detailed virtual network properties.
+
+        Args:
+            resource_group_name: Resource group name.
+            vnet_name: Virtual network name.
+
+        Returns:
+            Dictionary of VNet details or None if unavailable.
+        """
+        try:
+            vnet = self.network_client.virtual_networks.get(
+                resource_group_name=resource_group_name,
+                virtual_network_name=vnet_name
+            )
+
+            details = {}
+
+            # Address space
+            if vnet.address_space and vnet.address_space.address_prefixes:
+                details['address_space'] = ', '.join(vnet.address_space.address_prefixes)
+
+            # Subnets
+            if vnet.subnets:
+                details['subnet_count'] = len(vnet.subnets)
+                subnet_names = [subnet.name for subnet in vnet.subnets if subnet.name]
+                if subnet_names:
+                    details['subnet_names'] = ', '.join(subnet_names[:3])  # Show first 3 subnets
+                    if len(subnet_names) > 3:
+                        details['subnet_names'] += f" (+{len(subnet_names) - 3} more)"
+
+            # DHCP options
+            if vnet.dhcp_options and vnet.dhcp_options.dns_servers:
+                details['custom_dns'] = ', '.join(vnet.dhcp_options.dns_servers[:2])
+
+            return details
+
+        except Exception as e:
+            logger.warning(f"Failed to get VNet details for {vnet_name}: {e}")
+            return None
+>>>>>>> 8984586 (v1.1.2: Enhanced subnet icon visibility and diagram layout improvements)

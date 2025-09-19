@@ -91,7 +91,37 @@ class DOTGenerator:
         # Generate legend if enabled
         legend = self._generate_legend(graph) if self.config.show_legends else ""
 
-        # Combine all parts
+        # Position subscription title above master container (direct connection)
+        subscription_positioning = ""
+        if subscription_title.strip():
+            # Find any node within the master container to connect to
+            anchor_node = None
+            if 'title_' in subgraph_content:
+                import re
+                title_matches = re.findall(r'"(title_[^"]+)"', subgraph_content)
+                if title_matches:
+                    anchor_node = title_matches[0]  # Resource group title
+
+            # If no title, find any resource node
+            if not anchor_node and subgraph_content.strip():
+                resource_matches = re.findall(r'"([^"]*_[^"]*_[^"]+)"', subgraph_content)
+                if resource_matches:
+                    anchor_node = resource_matches[0]
+
+            # If no nodes found, find Internet node
+            if not anchor_node and 'internet_internet_gateway' in standalone_nodes:
+                anchor_node = 'internet_internet_gateway'
+
+            connection_edge = ""
+            if anchor_node:
+                connection_edge = f'\n    "subscription_title" -> "{anchor_node}" [style=invis, weight=100, minlen=1];'
+
+            subscription_positioning = f'''
+    // Position subscription title above master container
+    {{rank=min; "subscription_title";}}{connection_edge}
+'''
+
+        # Combine all parts with master container
         dot_content = f"""
 {header}
 {graph_attrs}
@@ -99,9 +129,20 @@ class DOTGenerator:
 {edge_defaults}
 
 {subscription_title}
-{subgraph_content}
-{standalone_nodes}
+
+    // Master container encompassing all content
+    subgraph cluster_master {{
+        label="";
+        style="solid";
+        color="lightgray";
+        margin="10";
+
+{self._indent_content(subgraph_content, 2)}
+{self._indent_content(standalone_nodes, 2)}
+    }}
+
 {edges}
+{subscription_positioning}
 {legend}
 }}
 """.strip()
@@ -109,6 +150,30 @@ class DOTGenerator:
         logger.info("DOT language generation completed")
         return dot_content
 
+    def _indent_content(self, content: str, spaces: int) -> str:
+        """Indent content by the specified number of spaces.
+
+        Args:
+            content: Content to indent.
+            spaces: Number of spaces to indent.
+
+        Returns:
+            Indented content.
+        """
+        if not content.strip():
+            return content
+
+        indent = ' ' * spaces
+        lines = content.split('\n')
+        indented_lines = []
+
+        for line in lines:
+            if line.strip():  # Only indent non-empty lines
+                indented_lines.append(indent + line)
+            else:
+                indented_lines.append(line)  # Keep empty lines as-is
+
+        return '\n'.join(indented_lines)
     def _generate_header(self) -> str:
         """Generate DOT file header."""
         direction_map = {
@@ -138,11 +203,12 @@ class DOTGenerator:
     concentrate=false;
     compound=true;
     newrank=true;
-    esep="+25";
-    sep="+20";
-    nodesep="1.0";
-    ranksep="1.5";
-    size="12,10!";
+    ordering="out";
+    esep="+15";
+    sep="+10";
+    nodesep="0.5";
+    ranksep="0.4";
+    size="12,8!";
     ratio="compress";
     pack="true";
     packmode="clust";"""
@@ -157,9 +223,11 @@ class DOTGenerator:
         fontname="{self.theme.font_name}",
         fontsize="{self.theme.font_size}",
         fontcolor="{self.theme.font_color}",
-        color="{self.theme.edge_color}"
+        color="{self.theme.edge_color}",
+        height="1.2",
+        width="1.8",
+        margin="0.1"
     ];"""
-
     def _generate_edge_defaults(self) -> str:
         """Generate default edge attributes."""
         return f"""    // Default edge attributes
@@ -198,29 +266,132 @@ class DOTGenerator:
         # Escape special characters for DOT
         title_text = title_text.replace('"', '\\"')
 
-        # Use appropriate colors based on theme
-        title_fillcolor = (
-            "lightblue" if self.config.theme == Theme.LIGHT else "darkblue"
-        )
+        # Use background color to blend subscription box with background
+        title_fillcolor = self.theme.background_color  # Match background color
         title_fontcolor = self.theme.font_color
 
-        return f"""    // Subscription Title
+        return f"""    // Subscription Title (compact, minimal padding, background color)
     "subscription_title" [
         label="{title_text}",
         shape="box",
         style="filled",
         fillcolor="{title_fillcolor}",
         fontname="{self.theme.font_name}",
-        fontsize="16",
+        fontsize="10",
         fontcolor="{title_fontcolor}",
-        color="{self.theme.edge_color}",
-        penwidth="2",
-        rank="min"
+        color="{title_fillcolor}",
+        penwidth="0",
+        height="0.4",
+        width="4.0",
+        margin="0.02",
+        labeljust="l",
+        labelloc="t"
     ];
 
-    // Force title to appear at the top
-    {{rank="min"; "subscription_title";}}
 """
+
+    def _generate_subgraphs(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
+        """Generate subgraph definitions with hybrid layout.
+        
+        Args:
+            graph: NetworkX directed graph.
+            subgraphs: Dictionary of subgraph definitions.
+            
+        Returns:
+            DOT subgraph definitions with horizontal RGs and vertical resources.
+        """
+        subgraph_content = []
+        
+        for subgraph_name, subgraph_data in subgraphs.items():
+            nodes = subgraph_data['nodes']
+            label = subgraph_data.get('label', subgraph_name)
+            style = subgraph_data.get('style', 'filled')
+            fillcolor = subgraph_data.get('fillcolor', 'lightgray')
+            
+            content = [f'    subgraph "{subgraph_name}" {{']
+            content.append(f'        label="{label}";')
+            content.append(f'        style="{style}";')
+            content.append(f'        fillcolor="{fillcolor}";')
+            content.append(f'        fontcolor="{self.theme.font_color}";')
+            content.append('        rankdir="LR";')  # Force left-to-right within this subgraph for priority ordering
+            content.append('')
+            
+            # Add nodes in this subgraph with priority ordering
+            # Define resource type priority (left to right)
+            priority_order = {
+                # Column 1: Public connectivity (leftmost)
+                'microsoft.network/publicipaddresses': 1,
+
+                # Column 2: Network security groups (after Public IPs)
+                'microsoft.network/networksecuritygroups': 2,
+
+                # Column 3: Network interfaces (after NSGs)
+                'microsoft.network/networkinterfaces': 3,
+
+                # Column 4: Subnets
+                'microsoft.network/virtualnetworks/subnets': 4,
+
+                # Column 5: Virtual Networks (to the right of subnets)
+                'microsoft.network/virtualnetworks': 5,
+
+                # Column 6: Compute resources
+                'microsoft.compute/virtualmachines': 6,
+                'microsoft.compute/virtualmachinescalesets': 6,
+                'microsoft.containerservice/managedclusters': 6,
+                'microsoft.redhatopenshift/openshiftclusters': 6,
+
+                # Column 7: Storage resources (aligned with their VMs)
+                'microsoft.compute/disks': 7,
+                'microsoft.storage/storageaccounts': 7,
+
+                # Column 8: Supporting resources
+                'microsoft.compute/sshpublickeys': 8,
+                'microsoft.managedidentity/userassignedidentities': 8,
+
+                # Column 8: Other resources
+                'microsoft.compute/galleries': 8,
+                'microsoft.compute/galleries/images': 8,
+                'microsoft.compute/galleries/images/versions': 8,
+            }
+
+            # Group nodes by priority and sort within each group
+            priority_groups = {}
+            for node_id in nodes:
+                if node_id in graph.nodes:
+                    node_data = graph.nodes[node_id]
+                    resource_type = node_data.get('resource_type', '').lower()
+                    priority = priority_order.get(resource_type, 99)  # Default to end
+
+                    if priority not in priority_groups:
+                        priority_groups[priority] = []
+                    priority_groups[priority].append((node_id, node_data))
+
+            # Add nodes grouped by priority with rank constraints
+            for priority in sorted(priority_groups.keys()):
+                group_nodes = priority_groups[priority]
+
+                # Add rank constraint comment
+                if len(group_nodes) > 1:
+                    content.append(f'        // Priority {priority} resources')
+
+                # Add node definitions
+                for node_id, node_data in group_nodes:
+                    node_def = self._format_node(node_id, node_data)
+                    content.append(f'        {node_def}')
+
+                # Add rank constraint for this priority group (vertical alignment in LR layout)
+                if len(group_nodes) > 1:
+                    node_ids = [node_id for node_id, _ in group_nodes]
+                    content.append(f'        {{rank=same; {"; ".join(f'"{node_id}"' for node_id in node_ids)};}}')
+                    content.append('')
+            
+            content.append('    }')
+            content.append('')
+            
+            subgraph_content.append('\n'.join(content))
+        
+        return '\n'.join(subgraph_content)
+>>>>>>> 8984586 (v1.1.2: Enhanced subnet icon visibility and diagram layout improvements)
 
     def _generate_subgraphs_with_container(
         self,
@@ -244,8 +415,8 @@ class DOTGenerator:
             '        label="Azure Resources";',
             '        style="dashed";',  # Dashed border container for layout constraint
             '        color="gray";',
-            '        margin="20";',
-            "",
+            '        margin="2";',
+            ''
         ]
 
         # Generate all the resource group subgraphs inside the container
@@ -258,29 +429,212 @@ class DOTGenerator:
             # Remove "cluster_" prefix if already present to avoid double prefixes
             clean_subgraph_name = subgraph_name.replace("cluster_", "")
 
-            container_content.extend(
-                [
-                    f'        subgraph "cluster_{clean_subgraph_name}" {{',
-                    f'            label="{label}";',
-                    f'            style="{style}";',
-                    f'            fillcolor="{fillcolor}";',
-                    f'            fontcolor="{self.theme.font_color}";',
-                    '            rankdir="TB";',
-                    '            margin="10";',
-                    "",
-                ],
-            )
+            # Create external title node outside the resource group (left-justified)
+            title_node_id = f'title_{clean_subgraph_name}'
+            container_content.extend([
+                f'        // Resource group title (external, left-justified)',
+                f'        "{title_node_id}" [',
+                f'            label="{label}",',
+                f'            shape="plaintext",',
+                f'            fontsize="10",',
+                f'            fontcolor="{self.theme.font_color}",',
+                f'            height="0.3",',
+                f'            width="3.0",',
+                f'            margin="0",',
+                f'            labeljust="l"',
+                f'        ];',
+                ''
+            ])
 
-            # Add nodes in this subgraph
+            container_content.extend([
+                f'        subgraph "cluster_{clean_subgraph_name}" {{',
+                f'            label="";',  # No label needed since title is external
+                f'            style="{style}";',
+                f'            fillcolor="{fillcolor}";',
+                f'            fontcolor="{self.theme.font_color}";',
+                '            rankdir="LR";',
+                '            margin="1";',  # Minimal margin since no internal title
+                ''
+            ])
+
+            # Add nodes in this subgraph with priority ordering
+            # Define resource type priority (left to right)
+            priority_order = {
+                # Column 1: Public connectivity (leftmost)
+                'microsoft.network/publicipaddresses': 1,
+
+                # Column 2: Network security groups (after Public IPs)
+                'microsoft.network/networksecuritygroups': 2,
+
+                # Column 3: Network interfaces (after NSGs)
+                'microsoft.network/networkinterfaces': 3,
+
+                # Column 4: Subnets
+                'microsoft.network/virtualnetworks/subnets': 4,
+
+                # Column 5: Virtual Networks (to the right of subnets)
+                'microsoft.network/virtualnetworks': 5,
+
+                # Column 6: Compute resources
+                'microsoft.compute/virtualmachines': 6,
+                'microsoft.compute/virtualmachinescalesets': 6,
+                'microsoft.containerservice/managedclusters': 6,
+                'microsoft.redhatopenshift/openshiftclusters': 6,
+
+                # Column 7: Storage resources (aligned with their VMs)
+                'microsoft.compute/disks': 7,
+                'microsoft.storage/storageaccounts': 7,
+
+                # Column 8: Supporting resources
+                'microsoft.compute/sshpublickeys': 8,
+                'microsoft.managedidentity/userassignedidentities': 8,
+
+                # Column 8: Other resources
+                'microsoft.compute/galleries': 8,
+                'microsoft.compute/galleries/images': 8,
+                'microsoft.compute/galleries/images/versions': 8,
+            }
+
+            # Group nodes by priority and sort within each group
+            priority_groups = {}
             for node_id in nodes:
                 if node_id in graph.nodes:
                     node_data = graph.nodes[node_id]
+                    resource_type = node_data.get('resource_type', '').lower()
+                    priority = priority_order.get(resource_type, 99)  # Default to end
+
+                    if priority not in priority_groups:
+                        priority_groups[priority] = []
+                    priority_groups[priority].append((node_id, node_data))
+
+            # Add nodes grouped by priority with rank constraints
+            for priority in sorted(priority_groups.keys()):
+                group_nodes = priority_groups[priority]
+
+                # Add rank constraint comment for all groups
+                container_content.append(f'            // Priority {priority} resources')
+
+                # Add node definitions
+                for node_id, node_data in group_nodes:
                     node_def = self._format_node(node_id, node_data)
                     container_content.append(f"            {node_def}")
 
-            container_content.extend(["        }", ""])
+                # Add rank constraint for this priority group (same rank = same column in LR layout)
+                # Skip storage resources as they will be aligned with VMs later
+                node_ids = []
+                for node_id, node_data in group_nodes:
+                    resource_type = node_data.get('resource_type', '').lower()
+                    if resource_type not in ['microsoft.compute/disks', 'microsoft.storage/storageaccounts']:
+                        node_ids.append(node_id)
 
-        container_content.append("    }")
+                if node_ids:
+                    container_content.append(f'            {{rank=same; {"; ".join(f'"{node_id}"' for node_id in node_ids)};}}')
+                container_content.append('')
+
+            # Add invisible ordering edges to force left-to-right layout within resource groups
+            all_priority_groups = []
+            for priority in sorted(priority_groups.keys()):
+                group_nodes = priority_groups[priority]
+                if group_nodes:
+                    # Use the first node from each priority group as representative
+                    all_priority_groups.append((priority, group_nodes[0][0]))
+
+            # Position external title to the left and above the resource group
+            # This happens outside the subgraph, so we'll handle it after closing the subgraph
+
+            # Create invisible edges between priority groups to enforce left-to-right ordering
+            if len(all_priority_groups) > 1:
+                container_content.append('')
+                container_content.append('            // Invisible ordering edges to force left-to-right layout')
+                for i in range(len(all_priority_groups) - 1):
+                    current_priority, current_node = all_priority_groups[i]
+                    next_priority, next_node = all_priority_groups[i + 1]
+                    container_content.append(f'            "{current_node}" -> "{next_node}" [style=invis, weight=100];')
+
+            # Add VM followed immediately by their storage (horizontal alignment)
+            container_content.append('')
+            container_content.append('            // VM-Storage inline horizontal placement')
+
+            # Find VMs and their corresponding storage resources for alignment
+            vm_nodes = []
+            storage_nodes = []
+            vm_storage_pairs = []
+
+            for priority in sorted(priority_groups.keys()):
+                group_nodes = priority_groups[priority]
+                for node_id, node_data in group_nodes:
+                    resource_type = node_data.get('resource_type', '').lower()
+                    if resource_type == 'microsoft.compute/virtualmachines':
+                        vm_nodes.append((node_id, node_data))
+                    elif resource_type in ['microsoft.compute/disks', 'microsoft.storage/storageaccounts']:
+                        storage_nodes.append((node_id, node_data))
+
+            # Create VM -> Storage inline ordering for horizontal alignment
+            for vm_node_id, vm_data in vm_nodes:
+                vm_name = vm_data.get('name', '').lower()
+                aligned_storage = []
+
+                for storage_node_id, storage_data in storage_nodes:
+                    storage_name = storage_data.get('name', '').lower()
+                    storage_type = storage_data.get('resource_type', '').lower()
+
+                    # Check if storage belongs to this VM
+                    vm_clean = vm_name.replace('-', '').replace('_', '').lower()
+                    storage_clean = storage_name.replace('-', '').replace('_', '').lower()
+
+                    if (vm_name == storage_name or  # Exact match (RHEL-ansible == RHEL-ansible)
+                        vm_clean == storage_clean or  # Clean match (win-ansible == winansible)
+                        vm_clean in storage_clean or  # VM name in storage (winansible in winansible8298)
+                        storage_clean.startswith(vm_clean) or  # Storage starts with VM name
+                        (len(vm_clean) >= 4 and vm_clean[:4] in storage_clean)):  # First 4+ chars match
+                        aligned_storage.append(storage_node_id)
+
+                # Create invisible edges to place storage immediately after VM
+                if aligned_storage:
+                    for storage_node_id in aligned_storage:
+                        container_content.append(f'            "{vm_node_id}" -> "{storage_node_id}" [style=invis, weight=1000, minlen=1];')
+                    vm_storage_pairs.append((vm_node_id, aligned_storage))
+
+            container_content.extend(['        }', ''])
+
+        # Position all external resource group titles
+        container_content.append('')
+        container_content.append('        // Position external resource group titles')
+
+        # Collect all title nodes and their associated first resource nodes for positioning
+        title_positioning = []
+        for subgraph_name, subgraph_data in subgraphs.items():
+            clean_subgraph_name = subgraph_name.replace("cluster_", "")
+            title_node_id = f'title_{clean_subgraph_name}'
+
+            # Find the first resource in this subgraph for positioning reference
+            nodes = subgraph_data['nodes']
+            if nodes:
+                first_resource_id = None
+                for node_id in nodes:
+                    if node_id in graph.nodes:
+                        # Use same node ID generation logic as elsewhere
+                        node_data = graph.nodes[node_id]
+                        resource_type_suffix = node_data.get('resource_type', '').split('/')[-1].lower() if '/' in node_data.get('resource_type', '') else node_data.get('resource_type', '').lower()
+                        formatted_node_id = f"{node_data.get('category', '').lower()}_{node_data.get('name', '').lower()}_{resource_type_suffix}".replace(' ', '_').replace('-', '_').replace('.', '_')
+                        first_resource_id = formatted_node_id
+                        break
+
+                if first_resource_id:
+                    title_positioning.append((title_node_id, first_resource_id))
+
+        # Add positioning constraints for external titles (left-justified)
+        if title_positioning:
+            # Group all resource group titles to the left
+            title_node_ids = [title_node_id for title_node_id, _ in title_positioning]
+            if len(title_node_ids) > 1:
+                container_content.append(f'        {{rank=same; {"; ".join(f'"{node_id}"' for node_id in title_node_ids)};}}')
+
+            for title_node_id, first_resource_id in title_positioning:
+                # Position title to the left of the resource group with left justification
+                container_content.append(f'        "{title_node_id}" -> "{first_resource_id}" [style=invis, weight=100, minlen=1];')
+
+        container_content.append('    }')
 
         return "\n".join(container_content)
 
@@ -305,13 +659,31 @@ class DOTGenerator:
 
         # Generate standalone nodes
         standalone_content = []
+        internet_nodes = []
+
         for node_id, node_data in graph.nodes(data=True):
             if node_id not in subgraph_nodes:
                 node_def = self._format_node(node_id, node_data)
-                standalone_content.append(f"    {node_def}")
 
-        return "\n".join(standalone_content)
+                # Special handling for Internet nodes - position them at far left
+                if node_data.get('resource_type') == 'Internet/Gateway':
+                    internet_nodes.append(f'    {node_def}')
+                else:
+                    standalone_content.append(f'    {node_def}')
 
+        # Add positioning constraints for Internet nodes (far left, independent)
+        result = []
+        if internet_nodes:
+            result.extend(internet_nodes)
+            # Add rank constraint to position Internet nodes at the far left
+            internet_node_ids = [node_id for node_id, node_data in graph.nodes(data=True)
+                               if node_id not in subgraph_nodes and node_data.get('resource_type') == 'Internet/Gateway']
+            if internet_node_ids:
+                result.append(f'    // Position Internet nodes at far left (below subscription)')
+                result.append(f'    {{rank=same; {"; ".join(f'"{node_id}"' for node_id in internet_node_ids)};}}')
+
+        result.extend(standalone_content)
+        return '\n'.join(result)
     def _format_node(self, node_id: str, node_data: Dict[str, Any]) -> str:
         """Format a single node definition with icon support.
 
@@ -380,17 +752,97 @@ class DOTGenerator:
             # Add power state for VMs (if enabled and available)
             if is_vm and power_state and self.config.show_power_state:
                 # Color code the power state
-                state_color = (
-                    "green"
-                    if power_state == "running"
-                    else (
-                        "red" if power_state in ["stopped", "deallocated"] else "orange"
-                    )
-                )
-                type_display_parts.append(
-                    f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9" COLOR="{state_color}"><B>{power_state.upper()}</B></FONT></TD></TR>',
-                )
+                state_color = "green" if power_state == "running" else "red" if power_state in ["stopped", "deallocated"] else "orange"
+                type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9" COLOR="{state_color}"><B>{power_state.upper()}</B></FONT></TD></TR>')
 
+            # Add detailed VM information if available and verbosity is high enough
+            if is_vm and self.config.label_verbosity.value >= 2:
+                if 'prop_vm_size' in node_data:
+                    vm_size = str(node_data['prop_vm_size']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{vm_size}</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_os_type' in node_data:
+                        os_type = str(node_data['prop_os_type']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">OS:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_type}</FONT></TD></TR>')
+                    if 'prop_os_sku' in node_data:
+                        os_sku = str(node_data['prop_os_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_sku}</FONT></TD></TR>')
+                    if 'prop_os_disk_size_gb' in node_data:
+                        disk_size = str(node_data['prop_os_disk_size_gb']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">OS Disk:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_size}GB</FONT></TD></TR>')
+
+            # Add detailed disk information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Compute/disks' and self.config.label_verbosity.value >= 2:
+                if 'prop_disk_size_gb' in node_data:
+                    disk_size = str(node_data['prop_disk_size_gb']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_size}GB</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_sku' in node_data:
+                        sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
+                    if 'prop_disk_state' in node_data:
+                        disk_state = str(node_data['prop_disk_state']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_state}</FONT></TD></TR>')
+
+            # Add detailed storage account information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Storage/storageAccounts' and self.config.label_verbosity.value >= 2:
+                if 'prop_sku' in node_data:
+                    sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_kind' in node_data:
+                        kind = str(node_data['prop_kind']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Kind:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{kind}</FONT></TD></TR>')
+                    if 'prop_access_tier' in node_data:
+                        access_tier = str(node_data['prop_access_tier']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Tier:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{access_tier}</FONT></TD></TR>')
+
+            # Add detailed network interface information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Network/networkInterfaces' and self.config.label_verbosity.value >= 2:
+                if 'prop_private_ip' in node_data:
+                    private_ip = str(node_data['prop_private_ip']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Private IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{private_ip}</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_public_ip_name' in node_data:
+                        public_ip_name = str(node_data['prop_public_ip_name']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Public IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{public_ip_name}</FONT></TD></TR>')
+                    if 'prop_subnet_name' in node_data:
+                        subnet_name = str(node_data['prop_subnet_name']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnet:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_name}</FONT></TD></TR>')
+
+            # Add detailed public IP information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Network/publicIPAddresses' and self.config.label_verbosity.value >= 2:
+                if 'prop_ip_address' in node_data:
+                    ip_address = str(node_data['prop_ip_address']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">IP Address:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{ip_address}</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_allocation_method' in node_data:
+                        allocation = str(node_data['prop_allocation_method']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Allocation:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{allocation}</FONT></TD></TR>')
+                    if 'prop_sku' in node_data:
+                        sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
+
+            # Add detailed virtual network information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Network/virtualNetworks' and self.config.label_verbosity.value >= 2:
+                if 'prop_address_space' in node_data:
+                    address_space = str(node_data['prop_address_space']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Address Space:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_space}</FONT></TD></TR>')
+
+                if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
+                    if 'prop_subnet_count' in node_data:
+                        subnet_count = str(node_data['prop_subnet_count']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnets:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_count}</FONT></TD></TR>')
+
+            # Add detailed NSG information if available and verbosity is high enough
+            if resource_type == 'Microsoft.Network/networkSecurityGroups' and self.config.label_verbosity.value >= 2:
+                # NSGs could show rule count or associated resources, but we'll keep it simple for now
+                pass
             # Add subnet information for private endpoints
             if resource_type == "Microsoft.Network/privateEndpoints":
                 # Get subnet information from stored properties
@@ -613,9 +1065,8 @@ class DOTGenerator:
                 style = "filled"
                 border_color = self.theme.edge_color
 
-            # Create HTML table label with background color applied to the TABLE element
-            html_label = f'<<TABLE border="0" cellborder="0" cellpadding="0" BGCOLOR="{node_fillcolor}"><TR><TD ALIGN="center" colspan="2"><img src="{icon_path}"/></TD></TR><TR><TD align="center" colspan="2"><B><FONT POINT-SIZE="11">{escaped_name}</FONT></B></TD></TR>{type_display}</TABLE>>'
-
+            # Create HTML table label with minimal padding for compact layout
+            html_label = f'<<TABLE border="0" cellborder="0" cellpadding="1" cellspacing="0" BGCOLOR="{node_fillcolor}"><TR><TD ALIGN="center" colspan="2" height="32" width="64"><img src="{icon_path}"/></TD></TR><TR><TD align="center" colspan="2"><B><FONT POINT-SIZE="11">{escaped_name}</FONT></B></TD></TR>{type_display}</TABLE>>'
             # For HTML table labels, we need to use a different approach to show borders
             # Use shape="box" with HTML label for better border control
             attributes = [
