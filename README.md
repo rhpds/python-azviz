@@ -15,17 +15,20 @@ Python AzViz generates visual diagrams of Azure Resource Groups and their depend
 - **Azure Resource Discovery**: Automatically finds resources and dependencies
 - **Subscription Flexibility**: Support for both subscription IDs and names
 - **Network Topology Mapping**: Maps VNets, subnets, and network relationships
+- **Enhanced Icon Visibility**: Properly sized subnet icons and resource-specific icons
 - **VM Power State Visualization**: Shows running/stopped status with color coding
 - **Visual Themes**: Light, dark, and neon color schemes
 - **Multiple Formats**: PNG, SVG, and interactive HTML output support
 - **Flexible Filtering**: Include/exclude specific resource types
 - **Icon Integration**: 56+ Azure service icons for visual clarity
-- **Hybrid Layout**: Horizontal resource groups with vertical resource stacking
+- **Optimized Layout**: External resource group titles, left-to-right resource ordering
 - **Advanced Dependencies**: SSH keys, managed identities, gallery hierarchies, DNS zones
 - **Private Link Support**: Visualizes Private Endpoints and Private Link Services
 - **Cross-Resource Group**: Discovers dependencies across resource groups
 - **Storage Account Relationships**: Connects VMs to storage accounts and diagnostics
 - **Compute-Only View**: Focus on compute resources and their direct dependencies
+- **Smart Edge Filtering**: Removes redundant bidirectional arrows for cleaner diagrams
+- **Horizontal VM-Storage Alignment**: Related storage appears next to VMs
 
 ## Example Output
 
@@ -135,13 +138,19 @@ python-azviz export --subscription "My Production Subscription" --output prod.pn
 # Using subscription by ID
 python-azviz export --subscription "12345678-1234-1234-1234-123456789012" --output prod.png
 
-# Focus on compute resources only
+# Focus on compute resources only (VMs, disks, storage, networking)
 python-azviz export --compute-only --output compute-topology.png
 python-azviz export --resource-group my-rg --compute-only --output my-compute.png
 
-# Verbose output for debugging (shows Graphviz warnings)
-python-azviz export --verbose --resource-group my-rg --output diagram.png
-python-azviz export -v --resource-group my-rg --output diagram.png
+# Save DOT source file for debugging
+python-azviz export --save-dot --resource-group my-rg --output diagram.png
+
+# Different label verbosity levels (1=minimal, 2=standard, 3=detailed)
+python-azviz export --verbosity 1 --resource-group my-rg --output minimal.png
+python-azviz export --verbosity 3 --resource-group my-rg --output detailed.png
+
+# Advanced filtering
+python-azviz export --exclude "*.subnets" --exclude "*.disks" --resource-group my-rg
 
 # List resource groups in specific subscription
 python-azviz list-rg --subscription "My Dev Subscription"

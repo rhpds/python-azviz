@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Python AzViz is a Python implementation of the PowerShell AzViz module for generating Azure resource topology diagrams. It discovers Azure resources, maps their relationships, and creates visual diagrams using NetworkX and Graphviz. The tool supports flexible subscription targeting by name or ID, comprehensive resource relationship discovery, and enhanced visualization of complex Azure topologies.
 
+**Current Version**: 1.1.3 (Latest improvements: enhanced subnet icon visibility, improved diagram layout, external resource group titles, compute-only filtering)
+
 ## Development Commands
 
 ### Environment Setup
@@ -37,9 +39,21 @@ python-azviz export --format html --output topology.html
 python-azviz export --subscription "My Production Subscription"
 python-azviz export --subscription "12345678-1234-1234-1234-123456789012"
 
-# Verbose output (shows Graphviz warnings and debug info)
-python-azviz export --verbose --resource-group my-rg
-python-azviz export -v --resource-group my-rg
+# Compute-only mode (show only compute resources and dependencies)
+python-azviz export --compute-only --resource-group my-rg
+
+# Save DOT file alongside output for debugging
+python-azviz export --save-dot --resource-group my-rg
+
+# Different output formats
+python-azviz export --format png --output diagram.png
+python-azviz export --format svg --output diagram.svg
+python-azviz export --format html --output diagram.html
+
+# Themes and styling
+python-azviz export --theme dark --resource-group my-rg
+python-azviz export --theme neon --resource-group my-rg
+python-azviz export --verbosity 3 --resource-group my-rg  # Detailed labels
 
 # Normal mode (suppresses Graphviz warnings for cleaner output)
 python-azviz export --resource-group my-rg
@@ -106,7 +120,9 @@ pytest --cov=azviz tests/
 - **Layered architecture**: Clear separation between Azure API, graph logic, and rendering
 - **Flexible authentication**: Supports Azure CLI, service principal, managed identity
 - **Theme system**: Light, dark, and neon themes with configurable styling
-- **Hybrid layout**: Horizontal resource group clustering with vertical resource stacking
+- **Hybrid layout**: Horizontal resource group clustering with left-to-right resource ordering
+- **Enhanced icon support**: Proper subnet icon sizing and resource-specific icons
+- **Compute-focused filtering**: Dedicated compute-only mode for simplified diagrams
 
 ### Resource Discovery Process
 
@@ -123,8 +139,13 @@ pytest --cov=azviz tests/
    - Route table subnet associations
    - Gallery hierarchy relationships
    - Cross-resource group dependencies
+   - Bidirectional edge filtering to reduce visual clutter
 7. Build NetworkX graph with subgraph clustering
-8. Generate Graphviz DOT representation with enhanced visual styling
+8. Generate Graphviz DOT representation with enhanced visual styling:
+   - External resource group titles for better layout
+   - Proper subnet icon sizing and visibility
+   - Priority-based resource ordering within resource groups
+   - Horizontal VM-storage alignment for related resources
 9. Render to PNG/SVG/HTML with icons and themes
 
 ### Output Formats
