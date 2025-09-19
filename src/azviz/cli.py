@@ -2,7 +2,6 @@
 
 import logging
 import sys
-from typing import Optional, Set
 
 import click
 from rich.console import Console
@@ -44,7 +43,7 @@ def setup_logging(verbose: bool = False) -> None:
 )
 @click.version_option()
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool, subscription: Optional[str]) -> None:
+def cli(ctx: click.Context, verbose: bool, subscription: str | None) -> None:
     """Python AzViz - Azure resource topology visualization tool.
 
     Generate beautiful diagrams of your Azure infrastructure automatically.
@@ -168,7 +167,7 @@ def export(
     no_power_state: bool,
     compute_only: bool,
     save_dot: bool,
-    subscription: Optional[str],
+    subscription: str | None,
 ) -> None:
     """Export Azure resource topology diagram.
 
@@ -242,7 +241,7 @@ def export(
         verbosity_enum = LabelVerbosity(verbosity)
         direction_enum = Direction(direction)
         splines_enum = Splines(splines)
-        exclude_set: Set[str] = set(exclude) if exclude else set()
+        exclude_set: set[str] = set(exclude) if exclude else set()
 
         # Adjust output file extension based on format if default filename is used
         output_file = output
@@ -292,7 +291,7 @@ def export(
     help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
 )
 @click.pass_context
-def list_resource_groups(ctx: click.Context, subscription: Optional[str]) -> None:
+def list_resource_groups(ctx: click.Context, subscription: str | None) -> None:
     """List available Azure resource groups in subscription.
 
     \b
@@ -356,8 +355,8 @@ def list_resource_groups(ctx: click.Context, subscription: Optional[str]) -> Non
 @click.pass_context
 def preview_resources(
     ctx: click.Context,
-    resource_group: Optional[str],
-    subscription: Optional[str],
+    resource_group: str | None,
+    subscription: str | None,
 ) -> None:
     """Preview resources in a resource group or all resource groups if none specified.
 
@@ -475,7 +474,7 @@ def preview_resources(
     help="Azure subscription ID or name. If not specified, uses the global --subscription or first available subscription.",
 )
 @click.pass_context
-def validate_prerequisites(ctx: click.Context, subscription: Optional[str]) -> None:
+def validate_prerequisites(ctx: click.Context, subscription: str | None) -> None:
     """Validate prerequisites for diagram generation."""
     try:
         verbose_mode = ctx.obj.get("verbose", False)

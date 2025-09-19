@@ -10,7 +10,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 
 def sanitize_filename(name: str) -> str:
@@ -24,7 +23,7 @@ def sanitize_filename(name: str) -> str:
     return sanitized
 
 
-def get_all_subscriptions() -> List[Dict[str, str]]:
+def get_all_subscriptions() -> list[dict[str, str]]:
     """Get list of all Azure subscriptions."""
     try:
         result = subprocess.run(
@@ -45,7 +44,7 @@ def get_all_subscriptions() -> List[Dict[str, str]]:
 def check_resource_groups(
     subscription_name: str,
     azviz_command: str,
-) -> Tuple[bool, int, str]:
+) -> tuple[bool, int, str]:
     """Check if subscription has any resource groups."""
     try:
         # Use our tool to check for resource groups in this subscription
@@ -88,7 +87,7 @@ def generate_diagram(
     output_format: str = "html",
     theme: str = "light",
     include_legend: bool = False,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Generate diagram for a subscription."""
     try:
         # Sanitize subscription name for filename

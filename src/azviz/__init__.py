@@ -8,4 +8,4 @@ from .core.azviz import AzViz
 from .core.models import LabelVerbosity, OutputFormat, Theme
 
 __version__ = "1.1.4"
-__all__ = ["AzViz", "Theme", "OutputFormat", "LabelVerbosity"]
+__all__ = ["AzViz", "LabelVerbosity", "OutputFormat", "Theme"]

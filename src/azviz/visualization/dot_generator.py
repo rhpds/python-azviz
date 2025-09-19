@@ -1,7 +1,7 @@
 """DOT language generation for Graphviz rendering."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import networkx as nx
 
@@ -50,9 +50,9 @@ class DOTGenerator:
     def generate_dot(
         self,
         graph: nx.DiGraph,
-        subgraphs: Dict[str, Dict[str, Any]],
-        subscription_name: Optional[str] = None,
-        subscription_id: Optional[str] = None,
+        subgraphs: dict[str, dict[str, Any]],
+        subscription_name: str | None = None,
+        subscription_id: str | None = None,
     ) -> str:
         """Generate DOT language string from NetworkX graph.
 
@@ -99,22 +99,25 @@ class DOTGenerator:
             # Look for any resource node in the subgraph content
             if subgraph_content.strip():
                 import re
-                resource_matches = re.findall(r'"([^"]*_[^"]*_[^"]+)"', subgraph_content)
+
+                resource_matches = re.findall(
+                    r'"([^"]*_[^"]*_[^"]+)"', subgraph_content
+                )
                 if resource_matches:
                     anchor_node = resource_matches[0]
 
             # If no nodes found, find Internet node
-            if not anchor_node and 'internet_internet_gateway' in standalone_nodes:
-                anchor_node = 'internet_internet_gateway'
+            if not anchor_node and "internet_internet_gateway" in standalone_nodes:
+                anchor_node = "internet_internet_gateway"
 
             connection_edge = ""
             if anchor_node:
                 connection_edge = f'\n    "subscription_title" -> "{anchor_node}" [style=invis, weight=100, minlen=1];'
 
-            subscription_positioning = f'''
+            subscription_positioning = f"""
     // Position subscription title above master container
     {{rank=min; "subscription_title";}}{connection_edge}
-'''
+"""
 
         # Combine all parts with master container
         dot_content = f"""
@@ -172,8 +175,8 @@ class DOTGenerator:
         if not content.strip():
             return content
 
-        indent = ' ' * spaces
-        lines = content.split('\n')
+        indent = " " * spaces
+        lines = content.split("\n")
         indented_lines = []
 
         for line in lines:
@@ -182,7 +185,8 @@ class DOTGenerator:
             else:
                 indented_lines.append(line)  # Keep empty lines as-is
 
-        return '\n'.join(indented_lines)
+        return "\n".join(indented_lines)
+
     def _generate_header(self) -> str:
         """Generate DOT file header."""
         direction_map = {
@@ -237,6 +241,7 @@ class DOTGenerator:
         width="1.8",
         margin="0.1"
     ];"""
+
     def _generate_edge_defaults(self) -> str:
         """Generate default edge attributes."""
         return f"""    // Default edge attributes
@@ -249,8 +254,8 @@ class DOTGenerator:
 
     def _generate_subscription_title(
         self,
-        subscription_name: Optional[str],
-        subscription_id: Optional[str],
+        subscription_name: str | None,
+        subscription_id: str | None,
     ) -> str:
         """Generate subscription title at the top of the diagram.
 
@@ -299,76 +304,72 @@ class DOTGenerator:
 
 """
 
-    def _generate_subgraphs(self, graph: nx.DiGraph, subgraphs: Dict[str, Dict[str, Any]]) -> str:
+    def _generate_subgraphs(
+        self, graph: nx.DiGraph, subgraphs: dict[str, dict[str, Any]]
+    ) -> str:
         """Generate subgraph definitions with hybrid layout.
-        
+
         Args:
             graph: NetworkX directed graph.
             subgraphs: Dictionary of subgraph definitions.
-            
+
         Returns:
             DOT subgraph definitions with horizontal RGs and vertical resources.
         """
         subgraph_content = []
-        
+
         for subgraph_name, subgraph_data in subgraphs.items():
-            nodes = subgraph_data['nodes']
-            label = subgraph_data.get('label', subgraph_name)
-            style = subgraph_data.get('style', 'filled')
-            fillcolor = subgraph_data.get('fillcolor', 'lightgray')
-            
+            nodes = subgraph_data["nodes"]
+            label = subgraph_data.get("label", subgraph_name)
+            style = subgraph_data.get("style", "filled")
+            fillcolor = subgraph_data.get("fillcolor", "lightgray")
+
             content = [f'    subgraph "{subgraph_name}" {{']
             content.append(f'        label="{label}";')
             content.append(f'        style="{style}";')
             content.append(f'        fillcolor="{fillcolor}";')
             content.append(f'        fontcolor="{self.theme.font_color}";')
-            content.append('        rankdir="LR";')  # Force left-to-right within this subgraph for priority ordering
-            content.append('')
-            
+            content.append(
+                '        rankdir="LR";'
+            )  # Force left-to-right within this subgraph for priority ordering
+            content.append("")
+
             # Add nodes in this subgraph with priority ordering
             # Define resource type priority (left to right)
             priority_order = {
                 # Column 1: Public connectivity (leftmost)
-                'microsoft.network/publicipaddresses': 1,
-
+                "microsoft.network/publicipaddresses": 1,
                 # Column 2: Network security groups (after Public IPs)
-                'microsoft.network/networksecuritygroups': 2,
-
+                "microsoft.network/networksecuritygroups": 2,
                 # Column 3: Network interfaces (after NSGs)
-                'microsoft.network/networkinterfaces': 3,
-
+                "microsoft.network/networkinterfaces": 3,
                 # Column 4: Subnets
-                'microsoft.network/virtualnetworks/subnets': 4,
-
+                "microsoft.network/virtualnetworks/subnets": 4,
                 # Column 5: Virtual Networks (to the right of subnets)
-                'microsoft.network/virtualnetworks': 5,
-
+                "microsoft.network/virtualnetworks": 5,
                 # Column 6: Compute resources
-                'microsoft.compute/virtualmachines': 6,
-                'microsoft.compute/virtualmachinescalesets': 6,
-                'microsoft.containerservice/managedclusters': 6,
-                'microsoft.redhatopenshift/openshiftclusters': 6,
-
+                "microsoft.compute/virtualmachines": 6,
+                "microsoft.compute/virtualmachinescalesets": 6,
+                "microsoft.containerservice/managedclusters": 6,
+                "microsoft.redhatopenshift/openshiftclusters": 6,
                 # Column 7: Storage resources (aligned with their VMs)
-                'microsoft.compute/disks': 7,
-                'microsoft.storage/storageaccounts': 7,
-
+                "microsoft.compute/disks": 7,
+                "microsoft.storage/storageaccounts": 7,
                 # Column 8: Supporting resources
-                'microsoft.compute/sshpublickeys': 8,
-                'microsoft.managedidentity/userassignedidentities': 8,
-
+                "microsoft.compute/sshpublickeys": 8,
+                "microsoft.managedidentity/userassignedidentities": 8,
                 # Column 8: Other resources
-                'microsoft.compute/galleries': 8,
-                'microsoft.compute/galleries/images': 8,
-                'microsoft.compute/galleries/images/versions': 8,
+                "microsoft.compute/galleries": 8,
+                "microsoft.compute/galleries/images": 8,
+                "microsoft.compute/galleries/images/versions": 8,
             }
 
             # Group nodes by priority and sort within each group
-            priority_groups = {}
+            priority_groups: dict[int, list[str]] = {}
             for node_id in nodes:
                 if node_id in graph.nodes:
                     node_data = graph.nodes[node_id]
-                    resource_type = node_data.get('resource_type', '').lower()
+                    resource_type = node_data.get("resource_type", "").lower()
                     priority = priority_order.get(resource_type, 99)  # Default to end
 
                     if priority not in priority_groups:
@@ -381,30 +382,31 @@ class DOTGenerator:
 
                 # Add rank constraint comment
                 if len(group_nodes) > 1:
-                    content.append(f'        // Priority {priority} resources')
+                    content.append(f"        // Priority {priority} resources")
 
                 # Add node definitions
                 for node_id, node_data in group_nodes:
                     node_def = self._format_node(node_id, node_data)
-                    content.append(f'        {node_def}')
+                    content.append(f"        {node_def}")
 
                 # Add rank constraint for this priority group (vertical alignment in LR layout)
                 if len(group_nodes) > 1:
                     node_ids = [node_id for node_id, _ in group_nodes]
-                    content.append(f'        {{rank=same; {"; ".join(f'"{node_id}"' for node_id in node_ids)};}}')
-                    content.append('')
-            
-            content.append('    }')
-            content.append('')
-            
-            subgraph_content.append('\n'.join(content))
+                    quoted_nodes = [f'"{node_id}"' for node_id in node_ids]
+                    content.append(f"        {{rank=same; {'; '.join(quoted_nodes)};}}")
+                    content.append("")
 
-        return '\n'.join(subgraph_content)
+            content.append("    }")
+            content.append("")
+
+            subgraph_content.append("\n".join(content))
+
+        return "\n".join(subgraph_content)
 
     def _generate_subgraphs_with_container(
         self,
         graph: nx.DiGraph,
-        subgraphs: Dict[str, Dict[str, Any]],
+        subgraphs: dict[str, dict[str, Any]],
     ) -> str:
         """Generate subgraphs wrapped in a master container for size constraint.
 
@@ -422,7 +424,11 @@ class DOTGenerator:
         container_content = []
 
         # Calculate the maximum number of nodes in any resource group for uniform sizing
-        max_nodes = max(len(subgraph_data["nodes"]) for subgraph_data in subgraphs.values()) if subgraphs else 1
+        max_nodes = (
+            max(len(subgraph_data["nodes"]) for subgraph_data in subgraphs.values())
+            if subgraphs
+            else 1
+        )
         # Set minimum width based on largest resource group (each node needs ~2.5 units of width)
         uniform_width = max(8, max_nodes * 2.5)
 
@@ -437,64 +443,58 @@ class DOTGenerator:
             # Remove "cluster_" prefix if already present to avoid double prefixes
             clean_subgraph_name = subgraph_name.replace("cluster_", "")
 
-            container_content.extend([
-                f'        subgraph "cluster_{clean_subgraph_name}" {{',
-                f'            label="{label}";',  # Put resource group name inside the box
-                f'            style="{style}";',
-                f'            fillcolor="{fillcolor}";',
-                f'            fontcolor="{self.theme.font_color}";',
-                '            rankdir="LR";',
-                '            margin="10";',  # Larger margin to force container visibility
-                '            penwidth="2";',  # Explicit border width
-                '            labeljust="c";',  # Center-justify the label
-                '            labelloc="t";',   # Put label at top
-                ''
-            ])
+            container_content.extend(
+                [
+                    f'        subgraph "cluster_{clean_subgraph_name}" {{',
+                    f'            label="{label}";',  # Put resource group name inside the box
+                    f'            style="{style}";',
+                    f'            fillcolor="{fillcolor}";',
+                    f'            fontcolor="{self.theme.font_color}";',
+                    '            rankdir="LR";',
+                    '            margin="10";',  # Larger margin to force container visibility
+                    '            penwidth="2";',  # Explicit border width
+                    '            labeljust="c";',  # Center-justify the label
+                    '            labelloc="t";',  # Put label at top
+                    "",
+                ]
+            )
 
             # Add nodes in this subgraph with priority ordering
             # Define resource type priority (left to right)
             priority_order = {
                 # Column 1: Public connectivity (leftmost)
-                'microsoft.network/publicipaddresses': 1,
-
+                "microsoft.network/publicipaddresses": 1,
                 # Column 2: Network security groups (after Public IPs)
-                'microsoft.network/networksecuritygroups': 2,
-
+                "microsoft.network/networksecuritygroups": 2,
                 # Column 3: Network interfaces (after NSGs)
-                'microsoft.network/networkinterfaces': 3,
-
+                "microsoft.network/networkinterfaces": 3,
                 # Column 4: Subnets
-                'microsoft.network/virtualnetworks/subnets': 4,
-
+                "microsoft.network/virtualnetworks/subnets": 4,
                 # Column 5: Virtual Networks (to the right of subnets)
-                'microsoft.network/virtualnetworks': 5,
-
+                "microsoft.network/virtualnetworks": 5,
                 # Column 6: Compute resources
-                'microsoft.compute/virtualmachines': 6,
-                'microsoft.compute/virtualmachinescalesets': 6,
-                'microsoft.containerservice/managedclusters': 6,
-                'microsoft.redhatopenshift/openshiftclusters': 6,
-
+                "microsoft.compute/virtualmachines": 6,
+                "microsoft.compute/virtualmachinescalesets": 6,
+                "microsoft.containerservice/managedclusters": 6,
+                "microsoft.redhatopenshift/openshiftclusters": 6,
                 # Column 7: Storage resources (aligned with their VMs)
-                'microsoft.compute/disks': 7,
-                'microsoft.storage/storageaccounts': 7,
-
+                "microsoft.compute/disks": 7,
+                "microsoft.storage/storageaccounts": 7,
                 # Column 8: Supporting resources
-                'microsoft.compute/sshpublickeys': 8,
-                'microsoft.managedidentity/userassignedidentities': 8,
-
+                "microsoft.compute/sshpublickeys": 8,
+                "microsoft.managedidentity/userassignedidentities": 8,
                 # Column 8: Other resources
-                'microsoft.compute/galleries': 8,
-                'microsoft.compute/galleries/images': 8,
-                'microsoft.compute/galleries/images/versions': 8,
+                "microsoft.compute/galleries": 8,
+                "microsoft.compute/galleries/images": 8,
+                "microsoft.compute/galleries/images/versions": 8,
             }
 
             # Group nodes by priority and sort within each group
-            priority_groups = {}
+            priority_groups: dict[int, list[str]] = {}
             for node_id in nodes:
                 if node_id in graph.nodes:
                     node_data = graph.nodes[node_id]
-                    resource_type = node_data.get('resource_type', '').lower()
+                    resource_type = node_data.get("resource_type", "").lower()
                     priority = priority_order.get(resource_type, 99)  # Default to end
 
                     if priority not in priority_groups:
@@ -506,7 +506,9 @@ class DOTGenerator:
                 group_nodes = priority_groups[priority]
 
                 # Add rank constraint comment for all groups
-                container_content.append(f'            // Priority {priority} resources')
+                container_content.append(
+                    f"            // Priority {priority} resources"
+                )
 
                 # Add node definitions
                 for node_id, node_data in group_nodes:
@@ -517,13 +519,19 @@ class DOTGenerator:
                 # Skip storage resources as they will be aligned with VMs later
                 node_ids = []
                 for node_id, node_data in group_nodes:
-                    resource_type = node_data.get('resource_type', '').lower()
-                    if resource_type not in ['microsoft.compute/disks', 'microsoft.storage/storageaccounts']:
+                    resource_type = node_data.get("resource_type", "").lower()
+                    if resource_type not in [
+                        "microsoft.compute/disks",
+                        "microsoft.storage/storageaccounts",
+                    ]:
                         node_ids.append(node_id)
 
                 if node_ids:
-                    container_content.append(f'            {{rank=same; {"; ".join(f'"{node_id}"' for node_id in node_ids)};}}')
-                container_content.append('')
+                    quoted_nodes = [f'"{node_id}"' for node_id in node_ids]
+                    container_content.append(
+                        f"            {{rank=same; {'; '.join(quoted_nodes)};}}"
+                    )
+                container_content.append("")
 
             # Add invisible ordering edges to force left-to-right layout within resource groups
             all_priority_groups = []
@@ -538,16 +546,22 @@ class DOTGenerator:
 
             # Create invisible edges between priority groups to enforce left-to-right ordering
             if len(all_priority_groups) > 1:
-                container_content.append('')
-                container_content.append('            // Invisible ordering edges to force left-to-right layout')
-                for i in range(len(all_priority_groups) - 1):
-                    current_priority, current_node = all_priority_groups[i]
-                    next_priority, next_node = all_priority_groups[i + 1]
-                    container_content.append(f'            "{current_node}" -> "{next_node}" [style=invis, weight=100];')
+                container_content.append("")
+                container_content.append(
+                    "            // Invisible ordering edges to force left-to-right layout"
+                )
+                for idx in range(len(all_priority_groups) - 1):
+                    _, current_node = all_priority_groups[idx]
+                    _, next_node = all_priority_groups[idx + 1]
+                    container_content.append(
+                        f'            "{current_node}" -> "{next_node}" [style=invis, weight=100];'
+                    )
 
             # Add VM followed immediately by their storage (horizontal alignment)
-            container_content.append('')
-            container_content.append('            // VM-Storage inline horizontal placement')
+            container_content.append("")
+            container_content.append(
+                "            // VM-Storage inline horizontal placement"
+            )
 
             # Find VMs and their corresponding storage resources for alignment
             vm_nodes = []
@@ -557,73 +571,95 @@ class DOTGenerator:
             for priority in sorted(priority_groups.keys()):
                 group_nodes = priority_groups[priority]
                 for node_id, node_data in group_nodes:
-                    resource_type = node_data.get('resource_type', '').lower()
-                    if resource_type == 'microsoft.compute/virtualmachines':
+                    resource_type = node_data.get("resource_type", "").lower()
+                    if resource_type == "microsoft.compute/virtualmachines":
                         vm_nodes.append((node_id, node_data))
-                    elif resource_type in ['microsoft.compute/disks', 'microsoft.storage/storageaccounts']:
+                    elif resource_type in [
+                        "microsoft.compute/disks",
+                        "microsoft.storage/storageaccounts",
+                    ]:
                         storage_nodes.append((node_id, node_data))
 
             # Create VM -> Storage inline ordering for horizontal alignment
             for vm_node_id, vm_data in vm_nodes:
-                vm_name = vm_data.get('name', '').lower()
+                vm_name = vm_data.get("name", "").lower()
                 aligned_storage = []
 
                 for storage_node_id, storage_data in storage_nodes:
-                    storage_name = storage_data.get('name', '').lower()
-                    storage_type = storage_data.get('resource_type', '').lower()
+                    storage_name = storage_data.get("name", "").lower()
+                    storage_type = storage_data.get("resource_type", "").lower()
 
                     # Check if storage belongs to this VM
-                    vm_clean = vm_name.replace('-', '').replace('_', '').lower()
-                    storage_clean = storage_name.replace('-', '').replace('_', '').lower()
+                    vm_clean = vm_name.replace("-", "").replace("_", "").lower()
+                    storage_clean = (
+                        storage_name.replace("-", "").replace("_", "").lower()
+                    )
 
-                    if (vm_name == storage_name or  # Exact match (RHEL-ansible == RHEL-ansible)
-                        vm_clean == storage_clean or  # Clean match (win-ansible == winansible)
-                        vm_clean in storage_clean or  # VM name in storage (winansible in winansible8298)
-                        storage_clean.startswith(vm_clean) or  # Storage starts with VM name
-                        (len(vm_clean) >= 4 and vm_clean[:4] in storage_clean)):  # First 4+ chars match
+                    if (
+                        vm_name
+                        == storage_name  # Exact match (RHEL-ansible == RHEL-ansible)
+                        or vm_clean
+                        == storage_clean  # Clean match (win-ansible == winansible)
+                        or vm_clean
+                        in storage_clean  # VM name in storage (winansible in winansible8298)
+                        or storage_clean.startswith(
+                            vm_clean
+                        )  # Storage starts with VM name
+                        or (len(vm_clean) >= 4 and vm_clean[:4] in storage_clean)
+                    ):  # First 4+ chars match
                         aligned_storage.append(storage_node_id)
 
                 # Create invisible edges to place storage immediately after VM
                 if aligned_storage:
                     for storage_node_id in aligned_storage:
-                        container_content.append(f'            "{vm_node_id}" -> "{storage_node_id}" [style=invis, weight=1000, minlen=1];')
+                        container_content.append(
+                            f'            "{vm_node_id}" -> "{storage_node_id}" [style=invis, weight=1000, minlen=1];'
+                        )
                     vm_storage_pairs.append((vm_node_id, aligned_storage))
 
-            container_content.extend(['        }', ''])
+            container_content.extend(["        }", ""])
 
         # Force each resource group onto its own row using invisible anchors
         if len(subgraph_list) > 0:
-            container_content.append('')
-            container_content.append('        // Invisible anchor nodes to force separate rows')
+            container_content.append("")
+            container_content.append(
+                "        // Invisible anchor nodes to force separate rows"
+            )
 
             # Create invisible anchor nodes for each resource group
             for i, (subgraph_name, _) in enumerate(subgraph_list):
                 clean_subgraph_name = subgraph_name.replace("cluster_", "")
-                anchor_id = f'rg_anchor_{clean_subgraph_name}'
-                container_content.append(f'        "{anchor_id}" [style=invis, height="0.1", width="0.1"];')
+                anchor_id = f"rg_anchor_{clean_subgraph_name}"
+                container_content.append(
+                    f'        "{anchor_id}" [style=invis, height="0.1", width="0.1"];'
+                )
 
             # Create vertical chain of anchors to force separate rows
-            container_content.append('')
-            container_content.append('        // Vertical chain to separate rows')
+            container_content.append("")
+            container_content.append("        // Vertical chain to separate rows")
             anchor_names = []
             for i, (subgraph_name, _) in enumerate(subgraph_list):
                 clean_subgraph_name = subgraph_name.replace("cluster_", "")
-                anchor_id = f'rg_anchor_{clean_subgraph_name}'
+                anchor_id = f"rg_anchor_{clean_subgraph_name}"
                 anchor_names.append(anchor_id)
 
             # Connect anchors in a vertical chain
             for i in range(len(anchor_names) - 1):
-                container_content.append(f'        "{anchor_names[i]}" -> "{anchor_names[i+1]}" [style=invis, weight=1000];')
+                container_content.append(
+                    f'        "{anchor_names[i]}" -> "{anchor_names[i + 1]}" [style=invis, weight=1000];'
+                )
 
             # Put each anchor in the same rank as a node from its resource group
-            container_content.append('')
-            container_content.append('        // Rank anchors with their resource groups')
+            container_content.append("")
+            container_content.append(
+                "        // Rank anchors with their resource groups"
+            )
             for i, (subgraph_name, subgraph_data) in enumerate(subgraph_list):
                 clean_subgraph_name = subgraph_name.replace("cluster_", "")
-                anchor_id = f'rg_anchor_{clean_subgraph_name}'
+                anchor_id = f"rg_anchor_{clean_subgraph_name}"
 
                 # Find the first node in this resource group
-                nodes = subgraph_data['nodes']
+                nodes = subgraph_data["nodes"]
                 if nodes:
                     # Use a simple approach - find any node from this subgraph
                     first_node_id = None
@@ -631,23 +667,35 @@ class DOTGenerator:
                         # Get the formatted node ID (this matches the format used in _format_node)
                         if node_id in graph.nodes:
                             node_data = graph.nodes[node_id]
-                            category = node_data.get('category', '').lower()
-                            name = node_data.get('name', '').lower()
-                            resource_type = node_data.get('resource_type', '')
-                            resource_type_suffix = resource_type.split('/')[-1].lower() if '/' in resource_type else resource_type.lower()
-                            formatted_node_id = f"{category}_{name}_{resource_type_suffix}".replace(' ', '_').replace('-', '_').replace('.', '_')
+                            category = node_data.get("category", "").lower()
+                            name = node_data.get("name", "").lower()
+                            resource_type = node_data.get("resource_type", "")
+                            resource_type_suffix = (
+                                resource_type.split("/")[-1].lower()
+                                if "/" in resource_type
+                                else resource_type.lower()
+                            )
+                            formatted_node_id = (
+                                f"{category}_{name}_{resource_type_suffix}".replace(
+                                    " ", "_"
+                                )
+                                .replace("-", "_")
+                                .replace(".", "_")
+                            )
                             first_node_id = formatted_node_id
                             break
 
                     if first_node_id:
-                        container_content.append(f'        {{rank=same; "{anchor_id}"; "{first_node_id}";}}')
+                        container_content.append(
+                            f'        {{rank=same; "{anchor_id}"; "{first_node_id}";}}'
+                        )
 
         return "\n".join(container_content)
 
     def _generate_standalone_nodes(
         self,
         graph: nx.DiGraph,
-        subgraphs: Dict[str, Dict[str, Any]],
+        subgraphs: dict[str, dict[str, Any]],
     ) -> str:
         """Generate nodes that are not part of any subgraph.
 
@@ -672,25 +720,33 @@ class DOTGenerator:
                 node_def = self._format_node(node_id, node_data)
 
                 # Special handling for Internet nodes - position them at far left
-                if node_data.get('resource_type') == 'Internet/Gateway':
-                    internet_nodes.append(f'    {node_def}')
+                if node_data.get("resource_type") == "Internet/Gateway":
+                    internet_nodes.append(f"    {node_def}")
                 else:
-                    standalone_content.append(f'    {node_def}')
+                    standalone_content.append(f"    {node_def}")
 
         # Add positioning constraints for Internet nodes (far left, independent)
         result = []
         if internet_nodes:
             result.extend(internet_nodes)
             # Add rank constraint to position Internet nodes at the far left
-            internet_node_ids = [node_id for node_id, node_data in graph.nodes(data=True)
-                               if node_id not in subgraph_nodes and node_data.get('resource_type') == 'Internet/Gateway']
+            internet_node_ids = [
+                node_id
+                for node_id, node_data in graph.nodes(data=True)
+                if node_id not in subgraph_nodes
+                and node_data.get("resource_type") == "Internet/Gateway"
+            ]
             if internet_node_ids:
-                result.append(f'    // Position Internet nodes at far left (below subscription)')
-                result.append(f'    {{rank=same; {"; ".join(f'"{node_id}"' for node_id in internet_node_ids)};}}')
+                result.append(
+                    "    // Position Internet nodes at far left (below subscription)"
+                )
+                quoted_nodes = [f'"{node_id}"' for node_id in internet_node_ids]
+                result.append(f"    {{rank=same; {'; '.join(quoted_nodes)};}}")
 
         result.extend(standalone_content)
-        return '\n'.join(result)
-    def _format_node(self, node_id: str, node_data: Dict[str, Any]) -> str:
+        return "\n".join(result)
+
+    def _format_node(self, node_id: str, node_data: dict[str, Any]) -> str:
         """Format a single node definition with icon support.
 
         Args:
@@ -758,91 +814,229 @@ class DOTGenerator:
             # Add power state for VMs (if enabled and available)
             if is_vm and power_state and self.config.show_power_state:
                 # Color code the power state
-                state_color = "green" if power_state == "running" else "red" if power_state in ["stopped", "deallocated"] else "orange"
-                type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9" COLOR="{state_color}"><B>{power_state.upper()}</B></FONT></TD></TR>')
+                state_color = (
+                    "green"
+                    if power_state == "running"
+                    else "red"
+                    if power_state in ["stopped", "deallocated"]
+                    else "orange"
+                )
+                type_display_parts.append(
+                    f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9" COLOR="{state_color}"><B>{power_state.upper()}</B></FONT></TD></TR>'
+                )
 
             # Add detailed VM information if available and verbosity is high enough
             if is_vm and self.config.label_verbosity.value >= 2:
                 # Note: VM size is handled in the enhanced section below to avoid duplicates
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_os_type' in node_data:
-                        os_type = str(node_data['prop_os_type']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">OS:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_type}</FONT></TD></TR>')
-                    if 'prop_os_sku' in node_data:
-                        os_sku = str(node_data['prop_os_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_sku}</FONT></TD></TR>')
-                    if 'prop_os_disk_size_gb' in node_data:
-                        disk_size = str(node_data['prop_os_disk_size_gb']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">OS Disk:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_size}GB</FONT></TD></TR>')
+                    if "prop_os_type" in node_data:
+                        os_type = (
+                            str(node_data["prop_os_type"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">OS:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_type}</FONT></TD></TR>'
+                        )
+                    if "prop_os_sku" in node_data:
+                        os_sku = (
+                            str(node_data["prop_os_sku"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{os_sku}</FONT></TD></TR>'
+                        )
+                    if "prop_os_disk_size_gb" in node_data:
+                        disk_size = (
+                            str(node_data["prop_os_disk_size_gb"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">OS Disk:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_size}GB</FONT></TD></TR>'
+                        )
 
             # Add detailed disk information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Compute/disks' and self.config.label_verbosity.value >= 2:
+            if (
+                resource_type == "Microsoft.Compute/disks"
+                and self.config.label_verbosity.value >= 2
+            ):
                 # Note: Disk size is handled in the enhanced section below to avoid duplicates
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_sku' in node_data:
-                        sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
-                    if 'prop_disk_state' in node_data:
-                        disk_state = str(node_data['prop_disk_state']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_state}</FONT></TD></TR>')
+                    if "prop_sku" in node_data:
+                        sku = (
+                            str(node_data["prop_sku"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>'
+                        )
+                    if "prop_disk_state" in node_data:
+                        disk_state = (
+                            str(node_data["prop_disk_state"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">State:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_state}</FONT></TD></TR>'
+                        )
 
             # Add detailed storage account information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Storage/storageAccounts' and self.config.label_verbosity.value >= 2:
-                if 'prop_sku' in node_data:
-                    sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
+            if (
+                resource_type == "Microsoft.Storage/storageAccounts"
+                and self.config.label_verbosity.value >= 2
+            ):
+                if "prop_sku" in node_data:
+                    sku = (
+                        str(node_data["prop_sku"])
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace('"', "&quot;")
+                    )
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>'
+                    )
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_kind' in node_data:
-                        kind = str(node_data['prop_kind']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Kind:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{kind}</FONT></TD></TR>')
-                    if 'prop_access_tier' in node_data:
-                        access_tier = str(node_data['prop_access_tier']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Tier:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{access_tier}</FONT></TD></TR>')
+                    if "prop_kind" in node_data:
+                        kind = (
+                            str(node_data["prop_kind"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Kind:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{kind}</FONT></TD></TR>'
+                        )
+                    if "prop_access_tier" in node_data:
+                        access_tier = (
+                            str(node_data["prop_access_tier"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Tier:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{access_tier}</FONT></TD></TR>'
+                        )
 
             # Add detailed network interface information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Network/networkInterfaces' and self.config.label_verbosity.value >= 2:
-                if 'prop_private_ip' in node_data:
-                    private_ip = str(node_data['prop_private_ip']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Private IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{private_ip}</FONT></TD></TR>')
+            if (
+                resource_type == "Microsoft.Network/networkInterfaces"
+                and self.config.label_verbosity.value >= 2
+            ):
+                if "prop_private_ip" in node_data:
+                    private_ip = (
+                        str(node_data["prop_private_ip"])
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace('"', "&quot;")
+                    )
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Private IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{private_ip}</FONT></TD></TR>'
+                    )
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_public_ip_name' in node_data:
-                        public_ip_name = str(node_data['prop_public_ip_name']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Public IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{public_ip_name}</FONT></TD></TR>')
-                    if 'prop_subnet_name' in node_data:
-                        subnet_name = str(node_data['prop_subnet_name']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnet:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_name}</FONT></TD></TR>')
+                    if "prop_public_ip_name" in node_data:
+                        public_ip_name = (
+                            str(node_data["prop_public_ip_name"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Public IP:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{public_ip_name}</FONT></TD></TR>'
+                        )
+                    if "prop_subnet_name" in node_data:
+                        subnet_name = (
+                            str(node_data["prop_subnet_name"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnet:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_name}</FONT></TD></TR>'
+                        )
 
             # Add detailed public IP information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Network/publicIPAddresses' and self.config.label_verbosity.value >= 2:
-                if 'prop_ip_address' in node_data:
-                    ip_address = str(node_data['prop_ip_address']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">IP Address:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{ip_address}</FONT></TD></TR>')
+            if (
+                resource_type == "Microsoft.Network/publicIPAddresses"
+                and self.config.label_verbosity.value >= 2
+            ):
+                if "prop_ip_address" in node_data:
+                    ip_address = (
+                        str(node_data["prop_ip_address"])
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace('"', "&quot;")
+                    )
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">IP Address:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{ip_address}</FONT></TD></TR>'
+                    )
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_allocation_method' in node_data:
-                        allocation = str(node_data['prop_allocation_method']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Allocation:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{allocation}</FONT></TD></TR>')
-                    if 'prop_sku' in node_data:
-                        sku = str(node_data['prop_sku']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>')
+                    if "prop_allocation_method" in node_data:
+                        allocation = (
+                            str(node_data["prop_allocation_method"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Allocation:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{allocation}</FONT></TD></TR>'
+                        )
+                    if "prop_sku" in node_data:
+                        sku = (
+                            str(node_data["prop_sku"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">SKU:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{sku}</FONT></TD></TR>'
+                        )
 
             # Add detailed virtual network information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Network/virtualNetworks' and self.config.label_verbosity.value >= 2:
-                if 'prop_address_space' in node_data:
-                    address_space = str(node_data['prop_address_space']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Address Space:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_space}</FONT></TD></TR>')
+            if (
+                resource_type == "Microsoft.Network/virtualNetworks"
+                and self.config.label_verbosity.value >= 2
+            ):
+                if "prop_address_space" in node_data:
+                    address_space = (
+                        str(node_data["prop_address_space"])
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace('"', "&quot;")
+                    )
+                    type_display_parts.append(
+                        f'<TR><TD align="right"><FONT POINT-SIZE="9">Address Space:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{address_space}</FONT></TD></TR>'
+                    )
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
-                    if 'prop_subnet_count' in node_data:
-                        subnet_count = str(node_data['prop_subnet_count']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                        type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnets:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_count}</FONT></TD></TR>')
+                    if "prop_subnet_count" in node_data:
+                        subnet_count = (
+                            str(node_data["prop_subnet_count"])
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                            .replace('"', "&quot;")
+                        )
+                        type_display_parts.append(
+                            f'<TR><TD align="right"><FONT POINT-SIZE="9">Subnets:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{subnet_count}</FONT></TD></TR>'
+                        )
 
             # Add detailed NSG information if available and verbosity is high enough
-            if resource_type == 'Microsoft.Network/networkSecurityGroups' and self.config.label_verbosity.value >= 2:
+            if (
+                resource_type == "Microsoft.Network/networkSecurityGroups"
+                and self.config.label_verbosity.value >= 2
+            ):
                 # NSGs could show rule count or associated resources, but we'll keep it simple for now
                 pass
 
@@ -1131,7 +1325,7 @@ class DOTGenerator:
 
         return "\n".join(edge_content)
 
-    def _format_edge(self, source: str, target: str, edge_data: Dict[str, Any]) -> str:
+    def _format_edge(self, source: str, target: str, edge_data: dict[str, Any]) -> str:
         """Format a single edge definition.
 
         Args:

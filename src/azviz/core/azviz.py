@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 
 from ..azure import AzureClient
 from ..icons import IconManager
@@ -26,9 +26,9 @@ class AzViz:
 
     def __init__(
         self,
-        subscription_identifier: Optional[str] = None,
-        credential: Optional[Any] = None,
-        icon_directory: Optional[Union[str, Path]] = None,
+        subscription_identifier: str | None = None,
+        credential: Any | None = None,
+        icon_directory: str | Path | None = None,
     ):
         """Initialize AzViz instance.
 
@@ -50,7 +50,7 @@ class AzViz:
 
     def export_diagram(
         self,
-        resource_group: Union[str, List[str]],
+        resource_group: str | list[str],
         output_file: str,
         theme: Theme = Theme.LIGHT,
         output_format: OutputFormat = OutputFormat.PNG,
@@ -58,7 +58,7 @@ class AzViz:
         category_depth: int = 2,
         direction: Direction = Direction.LEFT_TO_RIGHT,
         splines: Splines = Splines.POLYLINE,
-        exclude_types: Optional[Set[str]] = None,
+        exclude_types: set[str] | None = None,
         show_legends: bool = True,
         show_power_state: bool = True,
         compute_only: bool = False,
@@ -122,7 +122,9 @@ class AzViz:
         # Discover resources and network topology
         all_resources = []
         combined_topology = NetworkTopology()
-        seen_resources = set()  # Track unique resources by (name, resource_type, resource_group)
+        seen_resources = (
+            set()
+        )  # Track unique resources by (name, resource_type, resource_group)
 
         for rg_name in resource_groups:
             logger.info(f"Discovering resources in resource group: {rg_name}")
@@ -135,12 +137,18 @@ class AzViz:
 
             # Deduplicate resources - only add if not seen before
             for resource in resources:
-                resource_key = (resource.name, resource.resource_type, resource.resource_group)
+                resource_key = (
+                    resource.name,
+                    resource.resource_type,
+                    resource.resource_group,
+                )
                 if resource_key not in seen_resources:
                     seen_resources.add(resource_key)
                     all_resources.append(resource)
                 else:
-                    logger.debug(f"Skipping duplicate resource: {resource.name} ({resource.resource_type}) in {resource.resource_group}")
+                    logger.debug(
+                        f"Skipping duplicate resource: {resource.name} ({resource.resource_type}) in {resource.resource_group}"
+                    )
 
             # Get network topology
             if resources:
@@ -226,7 +234,7 @@ class AzViz:
         logger.info(f"Diagram exported successfully: {output_path}")
         return output_path
 
-    def get_available_resource_groups(self) -> List[Dict[str, Any]]:
+    def get_available_resource_groups(self) -> list[dict[str, Any]]:
         """Get list of available resource groups in subscription.
 
         Returns:
@@ -234,7 +242,7 @@ class AzViz:
         """
         return self.azure_client.get_resource_groups()
 
-    def preview_resources(self, resource_group: str) -> List[AzureResource]:
+    def preview_resources(self, resource_group: str) -> list[AzureResource]:
         """Preview resources in a resource group without generating diagram.
 
         Args:
@@ -245,7 +253,7 @@ class AzViz:
         """
         return self.azure_client.get_resources_in_group(resource_group, True)
 
-    def validate_prerequisites(self) -> Dict[str, bool]:
+    def validate_prerequisites(self) -> dict[str, bool]:
         """Validate all prerequisites for diagram generation.
 
         Returns:
@@ -268,7 +276,7 @@ class AzViz:
 
         return results
 
-    def get_supported_themes(self) -> List[str]:
+    def get_supported_themes(self) -> list[str]:
         """Get list of supported visual themes.
 
         Returns:
@@ -276,7 +284,7 @@ class AzViz:
         """
         return [theme.value for theme in Theme]
 
-    def get_supported_formats(self) -> List[str]:
+    def get_supported_formats(self) -> list[str]:
         """Get list of supported output formats.
 
         Returns:
@@ -284,7 +292,7 @@ class AzViz:
         """
         return [fmt.value for fmt in OutputFormat]
 
-    def get_icon_mappings(self) -> Dict[str, str]:
+    def get_icon_mappings(self) -> dict[str, str]:
         """Get available Azure resource icon mappings.
 
         Returns:

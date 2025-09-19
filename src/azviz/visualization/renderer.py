@@ -6,9 +6,9 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import Generator
 
 import graphviz  # type: ignore[import-untyped]
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextmanager
-def suppress_stderr() -> Generator[None, None, None]:
+def suppress_stderr() -> Generator[None]:
     """Context manager to temporarily suppress stderr output."""
     with open(os.devnull, "w") as devnull:
         old_stderr = sys.stderr

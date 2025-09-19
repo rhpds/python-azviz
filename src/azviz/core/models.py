@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -61,7 +61,7 @@ class ResourceDependency:
 
     target_name: str
     dependency_type: DependencyType = DependencyType.EXPLICIT
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -74,21 +74,21 @@ class AzureResource:
     location: str
     resource_group: str
     subscription_id: str
-    properties: Dict[str, Any] = field(default_factory=dict)
-    tags: Dict[str, str] = field(default_factory=dict)
-    dependencies: List[Union[str, ResourceDependency]] = field(default_factory=list)
+    properties: dict[str, Any] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
+    dependencies: list[str | ResourceDependency] = field(default_factory=list)
 
     def add_dependency(
         self,
         target_name: str,
         dependency_type: DependencyType = DependencyType.EXPLICIT,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> None:
         """Add a dependency with type information."""
         dependency = ResourceDependency(target_name, dependency_type, description)
         self.dependencies.append(dependency)
 
-    def get_dependency_names(self) -> List[str]:
+    def get_dependency_names(self) -> list[str]:
         """Get all dependency target names (for backward compatibility)."""
         names = []
         for dep in self.dependencies:
@@ -103,13 +103,13 @@ class AzureResource:
 class NetworkTopology:
     """Network topology information."""
 
-    virtual_networks: List[Dict[str, Any]] = field(default_factory=list)
-    subnets: List[Dict[str, Any]] = field(default_factory=list)
-    network_interfaces: List[Dict[str, Any]] = field(default_factory=list)
-    public_ips: List[Dict[str, Any]] = field(default_factory=list)
-    load_balancers: List[Dict[str, Any]] = field(default_factory=list)
-    network_security_groups: List[Dict[str, Any]] = field(default_factory=list)
-    associations: List[Dict[str, Any]] = field(default_factory=list)
+    virtual_networks: list[dict[str, Any]] = field(default_factory=list)
+    subnets: list[dict[str, Any]] = field(default_factory=list)
+    network_interfaces: list[dict[str, Any]] = field(default_factory=list)
+    public_ips: list[dict[str, Any]] = field(default_factory=list)
+    load_balancers: list[dict[str, Any]] = field(default_factory=list)
+    network_security_groups: list[dict[str, Any]] = field(default_factory=list)
+    associations: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -121,7 +121,7 @@ class GraphNode:
     label: str
     category: str
     resource_type: str
-    attributes: Dict[str, Any] = field(default_factory=dict)
+    attributes: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -132,7 +132,7 @@ class GraphEdge:
     target: str
     label: str = ""
     edge_type: str = "association"  # association or dependency
-    attributes: Dict[str, Any] = field(default_factory=dict)
+    attributes: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -182,15 +182,15 @@ class ResourceRanking:
 class VisualizationConfig(BaseModel):
     """Configuration for visualization generation."""
 
-    resource_groups: List[str]
+    resource_groups: list[str]
     label_verbosity: LabelVerbosity = LabelVerbosity.STANDARD
     category_depth: int = 2
     theme: Theme = Theme.LIGHT
     output_format: OutputFormat = OutputFormat.PNG
     direction: Direction = Direction.LEFT_TO_RIGHT
     splines: Splines = Splines.POLYLINE
-    exclude_types: Set[str] = field(default_factory=set)
+    exclude_types: set[str] = field(default_factory=set)
     show_legends: bool = True
     show_power_state: bool = True
     compute_only: bool = False
-    output_file: Optional[str] = None
+    output_file: str | None = None

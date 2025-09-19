@@ -4,7 +4,6 @@ import base64
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 class IconManager:
     """Manages Azure service icons with simple flat structure."""
 
-    def __init__(self, icon_directory: Optional[Union[str, Path]] = None):
+    def __init__(self, icon_directory: str | Path | None = None):
         """Initialize icon manager.
 
         Args:
@@ -110,7 +109,7 @@ class IconManager:
             f"IconManager initialized with {len(self.icon_mappings)} icon mappings",
         )
 
-    def get_icon_path(self, resource_type: str) -> Optional[Path]:
+    def get_icon_path(self, resource_type: str) -> Path | None:
         """Get icon file path for Azure resource type.
 
         Args:
@@ -136,7 +135,7 @@ class IconManager:
         logger.warning(f"Icon file not found: {icon_path}")
         return None
 
-    def get_available_icons(self) -> Dict[str, str]:
+    def get_available_icons(self) -> dict[str, str]:
         """Get all available icon mappings.
 
         Returns:
@@ -154,7 +153,7 @@ class IconManager:
         self.icon_mappings[resource_type.lower()] = icon_filename
         logger.info(f"Added custom icon mapping: {resource_type} -> {icon_filename}")
 
-    def get_icon_data_url(self, resource_type: str) -> Optional[str]:
+    def get_icon_data_url(self, resource_type: str) -> str | None:
         """Get icon as base64 data URL for embedding in HTML.
 
         Args:
