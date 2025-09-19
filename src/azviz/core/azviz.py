@@ -122,6 +122,7 @@ class AzViz:
         # Discover resources and network topology
         all_resources = []
         combined_topology = NetworkTopology()
+        seen_resources = set()  # Track unique resources by (name, resource_type, resource_group)
 
         for rg_name in resource_groups:
             logger.info(f"Discovering resources in resource group: {rg_name}")
@@ -131,7 +132,15 @@ class AzViz:
                 rg_name,
                 config.show_power_state,
             )
-            all_resources.extend(resources)
+
+            # Deduplicate resources - only add if not seen before
+            for resource in resources:
+                resource_key = (resource.name, resource.resource_type, resource.resource_group)
+                if resource_key not in seen_resources:
+                    seen_resources.add(resource_key)
+                    all_resources.append(resource)
+                else:
+                    logger.debug(f"Skipping duplicate resource: {resource.name} ({resource.resource_type}) in {resource.resource_group}")
 
             # Get network topology
             if resources:

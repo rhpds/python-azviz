@@ -96,14 +96,9 @@ class DOTGenerator:
         if subscription_title.strip():
             # Find any node within the master container to connect to
             anchor_node = None
-            if 'title_' in subgraph_content:
+            # Look for any resource node in the subgraph content
+            if subgraph_content.strip():
                 import re
-                title_matches = re.findall(r'"(title_[^"]+)"', subgraph_content)
-                if title_matches:
-                    anchor_node = title_matches[0]  # Resource group title
-
-            # If no title, find any resource node
-            if not anchor_node and subgraph_content.strip():
                 resource_matches = re.findall(r'"([^"]*_[^"]*_[^"]+)"', subgraph_content)
                 if resource_matches:
                     anchor_node = resource_matches[0]
@@ -130,15 +125,29 @@ class DOTGenerator:
 
 {subscription_title}
 
-    // Master container encompassing all content
+    // Master container encompassing all content including Internet
     subgraph cluster_master {{
         label="";
         style="solid";
         color="lightgray";
         margin="10";
+        rankdir="LR";
 
-{self._indent_content(subgraph_content, 2)}
 {self._indent_content(standalone_nodes, 2)}
+
+        // Create a subcontainer for resource groups to the right of Internet
+        subgraph cluster_resource_groups {{
+            label="";
+            style="invis";
+            margin="5";
+            rankdir="TB";
+            ranksep="3.0";
+            nodesep="2.0";
+
+{self._indent_content(subgraph_content, 3)}
+        }}
+
+        // Internet positioned separately - no explicit rank constraint needed
     }}
 
 {edges}
@@ -409,17 +418,17 @@ class DOTGenerator:
         if not subgraphs:
             return ""
 
-        container_content = [
-            "    subgraph cluster_main {",
-            '        label="Azure Resources";',
-            '        style="dashed";',  # Dashed border container for layout constraint
-            '        color="gray";',
-            '        margin="2";',
-            ''
-        ]
+        # Don't create another container here - just return the resource group content
+        container_content = []
 
-        # Generate all the resource group subgraphs inside the container
-        for subgraph_name, subgraph_data in subgraphs.items():
+        # Calculate the maximum number of nodes in any resource group for uniform sizing
+        max_nodes = max(len(subgraph_data["nodes"]) for subgraph_data in subgraphs.values()) if subgraphs else 1
+        # Set minimum width based on largest resource group (each node needs ~2.5 units of width)
+        uniform_width = max(8, max_nodes * 2.5)
+
+        # Generate all the resource group subgraphs inside the container with spacing
+        subgraph_list = list(subgraphs.items())
+        for i, (subgraph_name, subgraph_data) in enumerate(subgraph_list):
             nodes = subgraph_data["nodes"]
             label = subgraph_data.get("label", subgraph_name)
             style = subgraph_data.get("style", "filled")
@@ -428,31 +437,17 @@ class DOTGenerator:
             # Remove "cluster_" prefix if already present to avoid double prefixes
             clean_subgraph_name = subgraph_name.replace("cluster_", "")
 
-            # Create external title node outside the resource group (left-justified)
-            title_node_id = f'title_{clean_subgraph_name}'
-            container_content.extend([
-                f'        // Resource group title (external, left-justified)',
-                f'        "{title_node_id}" [',
-                f'            label="{label}",',
-                f'            shape="plaintext",',
-                f'            fontsize="10",',
-                f'            fontcolor="{self.theme.font_color}",',
-                f'            height="0.3",',
-                f'            width="3.0",',
-                f'            margin="0",',
-                f'            labeljust="l"',
-                f'        ];',
-                ''
-            ])
-
             container_content.extend([
                 f'        subgraph "cluster_{clean_subgraph_name}" {{',
-                f'            label="";',  # No label needed since title is external
+                f'            label="{label}";',  # Put resource group name inside the box
                 f'            style="{style}";',
                 f'            fillcolor="{fillcolor}";',
                 f'            fontcolor="{self.theme.font_color}";',
                 '            rankdir="LR";',
-                '            margin="1";',  # Minimal margin since no internal title
+                '            margin="10";',  # Larger margin to force container visibility
+                '            penwidth="2";',  # Explicit border width
+                '            labeljust="c";',  # Center-justify the label
+                '            labelloc="t";',   # Put label at top
                 ''
             ])
 
@@ -596,44 +591,56 @@ class DOTGenerator:
 
             container_content.extend(['        }', ''])
 
-        # Position all external resource group titles
-        container_content.append('')
-        container_content.append('        // Position external resource group titles')
+        # Force each resource group onto its own row using invisible anchors
+        if len(subgraph_list) > 0:
+            container_content.append('')
+            container_content.append('        // Invisible anchor nodes to force separate rows')
 
-        # Collect all title nodes and their associated first resource nodes for positioning
-        title_positioning = []
-        for subgraph_name, subgraph_data in subgraphs.items():
-            clean_subgraph_name = subgraph_name.replace("cluster_", "")
-            title_node_id = f'title_{clean_subgraph_name}'
+            # Create invisible anchor nodes for each resource group
+            for i, (subgraph_name, _) in enumerate(subgraph_list):
+                clean_subgraph_name = subgraph_name.replace("cluster_", "")
+                anchor_id = f'rg_anchor_{clean_subgraph_name}'
+                container_content.append(f'        "{anchor_id}" [style=invis, height="0.1", width="0.1"];')
 
-            # Find the first resource in this subgraph for positioning reference
-            nodes = subgraph_data['nodes']
-            if nodes:
-                first_resource_id = None
-                for node_id in nodes:
-                    if node_id in graph.nodes:
-                        # Use same node ID generation logic as elsewhere
-                        node_data = graph.nodes[node_id]
-                        resource_type_suffix = node_data.get('resource_type', '').split('/')[-1].lower() if '/' in node_data.get('resource_type', '') else node_data.get('resource_type', '').lower()
-                        formatted_node_id = f"{node_data.get('category', '').lower()}_{node_data.get('name', '').lower()}_{resource_type_suffix}".replace(' ', '_').replace('-', '_').replace('.', '_')
-                        first_resource_id = formatted_node_id
-                        break
+            # Create vertical chain of anchors to force separate rows
+            container_content.append('')
+            container_content.append('        // Vertical chain to separate rows')
+            anchor_names = []
+            for i, (subgraph_name, _) in enumerate(subgraph_list):
+                clean_subgraph_name = subgraph_name.replace("cluster_", "")
+                anchor_id = f'rg_anchor_{clean_subgraph_name}'
+                anchor_names.append(anchor_id)
 
-                if first_resource_id:
-                    title_positioning.append((title_node_id, first_resource_id))
+            # Connect anchors in a vertical chain
+            for i in range(len(anchor_names) - 1):
+                container_content.append(f'        "{anchor_names[i]}" -> "{anchor_names[i+1]}" [style=invis, weight=1000];')
 
-        # Add positioning constraints for external titles (left-justified)
-        if title_positioning:
-            # Group all resource group titles to the left
-            title_node_ids = [title_node_id for title_node_id, _ in title_positioning]
-            if len(title_node_ids) > 1:
-                container_content.append(f'        {{rank=same; {"; ".join(f'"{node_id}"' for node_id in title_node_ids)};}}')
+            # Put each anchor in the same rank as a node from its resource group
+            container_content.append('')
+            container_content.append('        // Rank anchors with their resource groups')
+            for i, (subgraph_name, subgraph_data) in enumerate(subgraph_list):
+                clean_subgraph_name = subgraph_name.replace("cluster_", "")
+                anchor_id = f'rg_anchor_{clean_subgraph_name}'
 
-            for title_node_id, first_resource_id in title_positioning:
-                # Position title to the left of the resource group with left justification
-                container_content.append(f'        "{title_node_id}" -> "{first_resource_id}" [style=invis, weight=100, minlen=1];')
+                # Find the first node in this resource group
+                nodes = subgraph_data['nodes']
+                if nodes:
+                    # Use a simple approach - find any node from this subgraph
+                    first_node_id = None
+                    for node_id in nodes:
+                        # Get the formatted node ID (this matches the format used in _format_node)
+                        if node_id in graph.nodes:
+                            node_data = graph.nodes[node_id]
+                            category = node_data.get('category', '').lower()
+                            name = node_data.get('name', '').lower()
+                            resource_type = node_data.get('resource_type', '')
+                            resource_type_suffix = resource_type.split('/')[-1].lower() if '/' in resource_type else resource_type.lower()
+                            formatted_node_id = f"{category}_{name}_{resource_type_suffix}".replace(' ', '_').replace('-', '_').replace('.', '_')
+                            first_node_id = formatted_node_id
+                            break
 
-        container_content.append('    }')
+                    if first_node_id:
+                        container_content.append(f'        {{rank=same; "{anchor_id}"; "{first_node_id}";}}')
 
         return "\n".join(container_content)
 
@@ -756,9 +763,7 @@ class DOTGenerator:
 
             # Add detailed VM information if available and verbosity is high enough
             if is_vm and self.config.label_verbosity.value >= 2:
-                if 'prop_vm_size' in node_data:
-                    vm_size = str(node_data['prop_vm_size']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{vm_size}</FONT></TD></TR>')
+                # Note: VM size is handled in the enhanced section below to avoid duplicates
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
                     if 'prop_os_type' in node_data:
@@ -773,9 +778,7 @@ class DOTGenerator:
 
             # Add detailed disk information if available and verbosity is high enough
             if resource_type == 'Microsoft.Compute/disks' and self.config.label_verbosity.value >= 2:
-                if 'prop_disk_size_gb' in node_data:
-                    disk_size = str(node_data['prop_disk_size_gb']).replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
-                    type_display_parts.append(f'<TR><TD align="right"><FONT POINT-SIZE="9">Size:</FONT></TD><TD align="left"><FONT POINT-SIZE="9">{disk_size}GB</FONT></TD></TR>')
+                # Note: Disk size is handled in the enhanced section below to avoid duplicates
 
                 if self.config.label_verbosity.value >= 3:  # DETAILED verbosity
                     if 'prop_sku' in node_data:
@@ -842,6 +845,7 @@ class DOTGenerator:
             if resource_type == 'Microsoft.Network/networkSecurityGroups' and self.config.label_verbosity.value >= 2:
                 # NSGs could show rule count or associated resources, but we'll keep it simple for now
                 pass
+
             # Add subnet information for private endpoints
             if resource_type == "Microsoft.Network/privateEndpoints":
                 # Get subnet information from stored properties
