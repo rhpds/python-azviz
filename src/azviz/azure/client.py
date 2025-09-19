@@ -3809,4 +3809,3 @@ class AzureClient:
         except Exception as e:
             logger.warning(f"Failed to get VNet details for {vnet_name}: {e}")
             return None
->>>>>>> 8984586 (v1.1.2: Enhanced subnet icon visibility and diagram layout improvements)

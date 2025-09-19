@@ -389,9 +389,8 @@ class DOTGenerator:
             content.append('')
             
             subgraph_content.append('\n'.join(content))
-        
+
         return '\n'.join(subgraph_content)
->>>>>>> 8984586 (v1.1.2: Enhanced subnet icon visibility and diagram layout improvements)
 
     def _generate_subgraphs_with_container(
         self,
