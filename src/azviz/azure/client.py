@@ -1,5 +1,7 @@
 """Azure client for resource discovery and authentication."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

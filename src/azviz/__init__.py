@@ -4,6 +4,8 @@ A Python port of the PowerShell AzViz module for automatically generating
 Azure resource topology diagrams.
 """
 
+from __future__ import annotations
+
 from .core.azviz import AzViz
 from .core.models import LabelVerbosity, OutputFormat, Theme
 

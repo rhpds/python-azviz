@@ -1,5 +1,7 @@
 """Graph building and DOT language generation."""
 
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
 

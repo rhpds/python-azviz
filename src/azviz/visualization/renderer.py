@@ -1,12 +1,14 @@
 """Graph rendering using Graphviz."""
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
 import re
 import shutil
 import sys
-from collections.abc import Generator
+from collections.abc import Generator  # noqa: TC003
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 

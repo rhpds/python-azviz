@@ -1,9 +1,11 @@
 """DOT language generation for Graphviz rendering."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
-import networkx as nx
+import networkx as nx  # noqa: TC002
 
 from ..core.models import Direction, Theme, ThemeConfig, VisualizationConfig
 
@@ -393,7 +395,8 @@ class DOTGenerator:
                 if len(group_nodes) > 1:
                     node_ids = [node_id for node_id, _ in group_nodes]
                     quoted_nodes = [f'"{node_id}"' for node_id in node_ids]
-                    content.append(f"        {{rank=same; {'; '.join(quoted_nodes)};}}")
+                    rank_line = f"        {{rank=same; {'; '.join(quoted_nodes)};}}"
+                    content.append(rank_line)
                     content.append("")
 
             content.append("    }")
